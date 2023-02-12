@@ -2,7 +2,7 @@
  * The Priority Task Scheduler
  * SKELETON IMPLEMENTATION TO BE FILLED IN FOR TASK 1
  * ==================================================================
- * ONGOING...
+ * Fin.
  * 
  * B171926
  */
@@ -107,10 +107,10 @@ public:
             auto top_entity = rq.first(); 
             if (rq.count() == 1) return top_entity; 
             if (top_entity == last_entity_ptr && top_entity->cpu_runtime() < last_entity_runtime_limit) {
-                // Ran for less than <time_quantum>
+                // Ran for less than `time_quantum`
                 return top_entity; 
             } else {
-                rq.append(rq.pop()); // append at back
+                rq.append(rq.pop()); // append at back, proceed
             }
 
             // Select next
@@ -128,7 +128,6 @@ private:
     RunQueue runqueues[4]; // Idx 0 -- 3 represent 4 lvls of priority
     SchedulingEntity* last_entity_ptr = nullptr; 
     SchedulingEntity::EntityRuntime last_entity_runtime_limit; 
-    // IDEA: Store index in runqueue to speed up removal process? 
 };
 
 /* --- DO NOT CHANGE ANYTHING BELOW THIS LINE --- */
