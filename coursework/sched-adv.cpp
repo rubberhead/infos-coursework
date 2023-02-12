@@ -35,7 +35,7 @@ public:
     uint8_t priority_value; 
 
     RunqueueEntry() = default; // [FIXME] Should be `delete` but `list.h` complains otherwise, not sure what's up
-    RunqueueEntry(SchedulingEntity* entity) 
+    explicit RunqueueEntry(SchedulingEntity* entity) 
     {
         this->entity = entity; 
         switch (entity->priority()) {
@@ -88,6 +88,7 @@ public:
     }
 
     RunqueueEntry& operator=(const RunqueueEntry& rhs) = default; // Copy unless equal ptr
+    // RunqueueEntry& operator=(RunqueueEntry&& rhs) = default;      // Move assignment unless 
 
     inline bool operator==(const RunqueueEntry& rhs) 
     {
@@ -185,7 +186,7 @@ public:
      */
     SchedulingEntity *pick_next_entity() override 
     {
-        const RunqueueEntry* firsts[4]; 
+        RunqueueEntry* firsts[4]; 
 
         // Iterate over each rq
         for (size_t i = 0; i < 4; i++) {
@@ -193,19 +194,20 @@ public:
             if (rq.count() == 0) continue; 
 
             // Select first
-            auto top_entry_ptr = &rq.first(); 
-            if (top_entry_ptr->entity != last_sched_entity_ptr) { // new entry
-                firsts[i] = top_entry_ptr; 
+            auto top_entry = rq.pop(); 
+            if (top_entry.entity != last_sched_entity_ptr) { // new entry
+                firsts[i] = &top_entry;  
+                rq.enqueue(top_entry); // Append at front
                 continue; 
             } else { // selected again
-                auto top_entry = rq.pop(); 
-                top_entry.increment();     // Update priority value
-                rq.append(top_entry);      // Append at back, proceed
+                top_entry.increment();      // Update priority value
+                rq.append(top_entry);       // Append at back (since RR), proceed
             }
 
             // Select next (or sole entry)
-            top_entry_ptr = &rq.first(); 
-            firsts[i] = top_entry_ptr; 
+            top_entry = rq.pop(); // [FIXME] Use move operator instead of copy
+            firsts[i] = &top_entry; 
+            rq.enqueue(top_entry); 
         }
         
         // Iterate over firsts, select min
@@ -217,6 +219,13 @@ public:
             }
         }
 
+        // Decrement all non-selected tasks
+        for (auto entry_ptr : firsts) {
+            if (entry_ptr == scheduled_entry_ptr) continue; 
+            entry_ptr->decrement(); 
+        }
+
+        // unwrap
         auto entity = (scheduled_entry_ptr == NULL) ? NULL : scheduled_entry_ptr->entity;
         last_sched_entity_ptr = entity; 
         return entity; 
