@@ -33,7 +33,12 @@ public:
     uint8_t priority_value; 
 
     /* [DONTUSE] Should be `delete` but `list.h` complains otherwise. */
-    RunqueueEntry() = default; 
+    RunqueueEntry()
+    {
+        this->entity = NULL; 
+        this->priority_value = 255;
+        this->_priority_delta = 0; 
+    } 
 
     /*
      * [DONTUSE] Should be `delete` but `list.h` complains otherwise. 
@@ -94,6 +99,11 @@ public:
         return this->priority_value; 
     }
 
+    bool is_placeholder() const 
+    {
+        return this->entity == NULL; 
+    }
+
     RunqueueEntry& operator=(const RunqueueEntry& rhs) = default; // Copy unless equal ptr
     RunqueueEntry& operator=(RunqueueEntry&& rhs) = default;      // Move unless equal ptr
 
@@ -152,15 +162,6 @@ public:
         RunqueueEntry entry (&entity); 
         size_t idx = entity.priority(); 
         runqueues[idx].push(entry); 
-
-        sched_log.messagef(
-            LogLevel::IMPORTANT, 
-            "[%s] Added entry @ 0x%x for {@ 0x%x | P-lvl: %d}", 
-            name(), 
-            &runqueues[idx].last(), 
-            entry.entity, 
-            entity.priority()
-        );
     }
 
     /**
@@ -199,146 +200,89 @@ public:
         // This is (I guess?) due to VA-PA abstraction, which does that job for you (diff VA -> same PA, first now has no ownership). 
         // Cost differential from copy semantics comes from diff VA -> diff PA in comparison. 
         // (I guess this course really is a little useful for you? Yes to internal knowledge, no to premature optimization)
-        RunqueueEntry firsts[4] = {NULL, NULL, NULL, NULL}; 
+
+        RunqueueEntry firsts[4];
 
         // Iterate over each rq to fill `firsts`
         for (size_t i = 0; i < 4; i++) {
             RunQueue& rq = runqueues[i]; 
-            if (rq.count() == 0) continue; 
 
-            // Select first
-            RunqueueEntry top_entry = rq.pop(); 
-            if (top_entry.entity != _last_entity_ptr) { // new entry
-                firsts[i] = top_entry; 
-                rq.enqueue(top_entry); // Copy-enqueue
-            } else {                                    // selected again (across all rqs)
-                uint8_t prev = top_entry.priority_value; 
-                uint8_t curr = top_entry.increment();            // Update priority value
-                assert(prev == 255 || prev != curr); 
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] Entry for @ 0x%x makes P-val change %d -> %d", 
-                    name(), 
-                    top_entry.entity, 
-                    prev, 
-                    curr
-                ); 
-
-                rq.append(top_entry);                           // Append at back (since RR)
-                firsts[i] = rq.pop(); 
-                rq.enqueue(top_entry);
+            // If rq of this prio-lvl empty, use placeholder... 
+            if (rq.count() == 0) {
+                firsts[i] = RunqueueEntry(); 
+                continue; //... without updating last selected entity
             }
-        }
 
-        // Logging purposes =======================================================================
-        sched_log.messagef(
-            LogLevel::IMPORTANT, 
-            "[%s] BEFORE ITERATION", 
-            name()
-        ); 
-        for (size_t i = 0; i < 4; i++) {
-            auto entry_ptr = firsts[i]; 
-            if (entry_ptr == NULL) {
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] First at P-lvl %d is NULL. Total rq size = %d", 
-                    name(), 
-                    i, 
-                    runqueues[i].count()
-                ); 
-            } else {
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] First at P-lvl %d has P-val %d and point to entity @ 0x%x. Total rq size = %d", 
-                    name(), 
-                    i, 
-                    entry_ptr->priority_value, // DOES NOT CHANGE!
-                    entry_ptr->entity, 
-                    runqueues[i].count()
-                ); 
+            // Otherwise get first
+            if (rq.first().entity != _last_selected_ptrs[i]) { 
+                // new entry
+                firsts[i] = RunqueueEntry(rq.first()); 
+            } else { 
+                // selected again
+                RunqueueEntry top_entry = rq.pop(); 
+                if (top_entry.entity == _last_ran_ptr) top_entry.increment(); // Else like RR
+                rq.append(top_entry); // Move first to last
+
+                firsts[i] = RunqueueEntry(rq.first()); // Select next first
             }
+
+            // Regardless update last selected entity for this priority level
+            _last_selected_ptrs[i] = firsts[i].entity; 
         }
-        // ==========================================================================================
         
-        RunqueueEntry* scheduled_entry_ptr = NULL; 
-        // Iterate over firsts, select min or NULL (if all NULL)
-        for (const auto entry_ptr : firsts) {
-            if (entry_ptr == NULL) {
+        // This can ptr into firsts no problem, but any alteration needs to be done on runqueue.
+        const RunqueueEntry* scheduled_entry_ptr = &firsts[0]; 
+
+        // Iterate over firsts, select min or return NULL (if all placeholders)
+        for (const auto& entry : firsts) {
+            if (entry.is_placeholder()) {
                 continue;
             }
-            if (scheduled_entry_ptr == NULL ||
-                entry_ptr->priority_value < scheduled_entry_ptr->priority_value
+            if (scheduled_entry_ptr->is_placeholder() ||
+                entry.priority_value < scheduled_entry_ptr->priority_value
             ) {
-                scheduled_entry_ptr = entry_ptr; 
+                scheduled_entry_ptr = &entry; 
             }
         }
-        if (scheduled_entry_ptr == NULL) return NULL; 
+        if (scheduled_entry_ptr->is_placeholder()) return NULL; 
 
-        // Decrement all non-selected tasks if non-NULL
-        for (auto entry_ptr : firsts) {
-            if (entry_ptr != NULL && entry_ptr != scheduled_entry_ptr) {
-                uint8_t prev = entry_ptr->priority_value; 
-                uint8_t curr = entry_ptr->decrement(); 
-                assert(prev == 0 || prev != curr); 
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] Entry for @ 0x%x makes P-val change %d -> %d", 
-                    name(), 
-                    entry_ptr->entity, 
-                    prev, 
-                    curr
-                ); 
-            }
-        }
-
-        // Logging purposes ========================================================================
-        sched_log.messagef(
-            LogLevel::IMPORTANT, 
-            "[%s] AFTER ITERATION", 
-            name()
-        ); 
+        // Decrement all non-placeholder non-selected tasks if some non-NULL
         for (size_t i = 0; i < 4; i++) {
-            auto entry_ptr = firsts[i]; 
-            if (entry_ptr == NULL) {
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] First at P-lvl %d is NULL. Total rq size = %d", 
-                    name(), 
-                    i, 
-                    runqueues[i].count()
-                ); 
-            } else {
-                sched_log.messagef(
-                    LogLevel::DEBUG, 
-                    "[%s] First at P-lvl %d has P-val %d and point to entity @ 0x%x. Total rq size = %d", 
-                    name(), 
-                    i, 
-                    entry_ptr->priority_value, // DOES NOT CHANGE!
-                    entry_ptr->entity, 
-                    runqueues[i].count()
-                ); 
+            auto& entry = firsts[i]; 
+            auto& rq = runqueues[i]; 
+            if (!entry.is_placeholder() && &entry != scheduled_entry_ptr) {
+                entry.decrement(); 
+                /* 
+                 * [FIXME] O(n) time LMAO, hope I could use ptr but first/last returns const* and 
+                 * "list" is really a queue (not even a doubly-linked list!). 
+                */
+                rq.remove(entry); // see overloaded `==` operator.
+                rq.push(entry); // Back to previous location
             }
         }
-        // =============================================================================================
 
         // unwrap
         assert(scheduled_entry_ptr != NULL);
-        assert(scheduled_entry_ptr->entity != NULL); 
+        assert(!scheduled_entry_ptr->is_placeholder()); 
         sched_log.messagef(
-            LogLevel::IMPORTANT, 
+            LogLevel::DEBUG, 
             "[%s] Selected entity {@ 0x%x | P-lvl: %d, P-val: %d}", 
             name(), 
             scheduled_entry_ptr->entity, 
             scheduled_entry_ptr->entity->priority(), 
             scheduled_entry_ptr->priority_value
-        ); 
-        _last_entity_ptr = scheduled_entry_ptr->entity; // Update last selection
+        );
+        _last_ran_ptr = scheduled_entry_ptr->entity; 
         return scheduled_entry_ptr->entity; 
     }
 
 private:
-    RunQueue runqueues[4]; // Idx 0 -- 3 represent 4 lvls of priority
-    const SchedulingEntity* _last_entity_ptr; // [UNSAFE] Will dangle! Never dereference. 
+    // Idx 0 -- 3 represent 4 lvls of priority
+    RunQueue runqueues[4]; 
+
+    // [UNSAFE] Will dangle! Never dereference. 
+    const SchedulingEntity* _last_selected_ptrs[4] = {NULL, NULL, NULL, NULL}; 
+    const SchedulingEntity* _last_ran_ptr = NULL; 
 }; 
 
 RegisterScheduler(MultiQueuePriorityValueScheduler); 
