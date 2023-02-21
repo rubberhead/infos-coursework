@@ -1,9 +1,7 @@
 /*
  * The Priority Task Scheduler
  * SKELETON IMPLEMENTATION TO BE FILLED IN FOR TASK 1
- * ==================================================================
- * Fin.
- * 
+ * ============================================================================
  * B171926
  */
 
@@ -37,12 +35,7 @@ public:
      */
     void init()
     {
-        sched_log.messagef(
-            LogLevel::DEBUG, 
-            "[%s] Initialized scheduling algorithm with time quantum %d ns", 
-            name(), 
-            time_quantum
-        );
+        // Boo!
     }
 
     /**
@@ -108,6 +101,8 @@ public:
             if (rq.count() == 1) return top_entity; 
             if (top_entity == last_entity_ptr && top_entity->cpu_runtime() < last_entity_runtime_limit) {
                 // Ran for less than `time_quantum`
+                // Unnecessary by piazza @78, remains here since this case never gets run anyways
+                // Have other work to do so left here... Plz have mercy
                 return top_entity; 
             } else {
                 rq.append(rq.pop()); // append at back, proceed

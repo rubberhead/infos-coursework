@@ -1,5 +1,5 @@
 /*
- * The Multi-Queue Priority-Value Task Scheduler
+ * The Multi-Queue Priority-Value Task Scheduler (Advanced)
  * 
  * B171926
 */
@@ -18,7 +18,7 @@ using namespace infos::util;
 constexpr uint8_t PRIO_BASE_VAL[4]    = {50, 100, 150, 200}; 
 
 /* Priority value increment/decrement deltas for each priority level */
-constexpr uint8_t PRIO_DELTA_TABLE[4] = {25, 10, 5, 1}; 
+constexpr uint8_t PRIO_DELTA_TABLE[4] = {100, 25, 10, 1}; 
 
 /**
  * @brief 
@@ -99,20 +99,21 @@ public:
     RunqueueEntry& operator=(const RunqueueEntry& rhs) = default; // Copy unless equal ptr
     RunqueueEntry& operator=(RunqueueEntry&& rhs) = default;      // Move unless equal ptr
 
-    inline bool operator==(const RunqueueEntry& rhs) 
-    {
-        return (this->entity == rhs.entity); 
-    }
-
-    inline bool operator!=(const RunqueueEntry& rhs)
-    {
-        return !(*this == rhs); 
-    }
-    
-
+    friend inline bool operator==(const RunqueueEntry& lhs, const RunqueueEntry& rhs); 
+    friend inline bool operator!=(const RunqueueEntry& lhs, const RunqueueEntry& rhs); 
 private: 
     uint8_t _prio_incr_delta, _prio_decr_delta; 
 }; 
+
+inline bool operator==(const RunqueueEntry& lhs, const RunqueueEntry& rhs)
+{
+    return (lhs.entity == rhs.entity); 
+} 
+
+inline bool operator!=(const RunqueueEntry& lhs, const RunqueueEntry& rhs)
+{
+    return !(lhs == rhs); 
+}
 
 /*
  * > Why not Map? 
@@ -197,12 +198,7 @@ public:
      */
     SchedulingEntity *pick_next_entity() override 
     {
-        // Rant: 
         // This implementation is full of copy vs. move shenanigans. 
-        // Move semantics DOES NOT IMPLY that the memory addresses of l-rvalue would be the same!!!!!!!!!
-        // This is (I guess?) due to VA-PA abstraction, which does that job for you (diff VA -> same PA, first now has no ownership). 
-        // Cost differential from copy semantics comes from diff VA -> diff PA in comparison. 
-        // (I guess this course really is a little useful for me... Yes to internal knowledge, no to premature optimization)
 
         // Stores *copies* of runqueue elements
         RunqueueEntry firsts[4];
@@ -217,21 +213,18 @@ public:
                 continue; //... without updating last selected entity
             }
 
-            // Otherwise get first
-            if (rq.first().entity != _last_selected_ptrs[i]) { 
-                // new entry
+            // Otherwise get first or next
+            if (rq.first().entity != _last_ran_ptr) { 
+                // => first
                 firsts[i] = RunqueueEntry(rq.first()); 
             } else { 
-                // selected again
+                // same as last scheduled task => next
                 RunqueueEntry top_entry = rq.pop(); 
-                if (top_entry.entity == _last_ran_ptr) top_entry.increment(); // Else like RR
-                rq.append(top_entry); // Move first to last
+                top_entry.increment(); 
+                rq.append(top_entry);                  // Move first to last
 
                 firsts[i] = RunqueueEntry(rq.first()); // Select next first
             }
-
-            // Regardless update last selected entity for this priority level
-            _last_selected_ptrs[i] = firsts[i].entity; 
         }
         
         // This can ptr into firsts but not runqueue -- any alteration needs to be done on runqueue.
@@ -296,7 +289,6 @@ private:
     RunQueue runqueues[4]; 
 
     // [UNSAFE] Will dangle! Never dereference. 
-    const SchedulingEntity* _last_selected_ptrs[4] = {NULL, NULL, NULL, NULL}; 
     const SchedulingEntity* _last_ran_ptr = NULL; 
 }; 
 
