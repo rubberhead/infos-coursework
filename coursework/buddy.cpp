@@ -138,6 +138,10 @@ private:
 			return (PageDescriptor*)aligned_pgd_l; 
 		} else {
 			// unreachable!
+			mm_log.message(
+				LogLevel::FATAL, 
+				"[buddy::buddy_of] Both left and right not in `_pgds`. Crashed!"
+			); 
 			assert(false); 
 		}
 	}
