@@ -77,7 +77,7 @@ private:
 	const uint64_t _pgds_len; 
 
 	/* 
-	 * Limit pointer for the page descriptor table. Points to (last + 1) element. 
+	 * Limit pointer for the page descriptor table. Points to hypothetical (last + 1) element. 
 	 *
 	 * [DANGER] NEVER dereference -- segfault coredump otherwise. 
 	 */
@@ -137,7 +137,8 @@ private:
 			// => L and R both in "array"
 			const size_t idx_aligned_pgd = __idx_of((PageDescriptor*)aligned_pgd, _pgds, _pgds_len); 
 			if (idx_aligned_pgd % TWO_POW(order + 1)) {
-				// => `aligned_pgd` right buddy
+				// => `aligned_pgd` right buddy 
+				// goto top_preference_violation; 
 				return (PageDescriptor*)aligned_pgd_l; 
 			} else {
 				// => `aligned_pgd` left buddy
@@ -148,9 +149,10 @@ private:
 			assert(__idx_of((PageDescriptor*)aligned_pgd, _pgds, _pgds_len) == 0); 
 			return (PageDescriptor*)aligned_pgd_r; 
 		} else if (pattern[0]) {
-			// => Only L in "array"; `aligned_pgd` last
+			// => Only L in "array"; `aligned_pgd` last 
 			assert(__idx_of((PageDescriptor*)aligned_pgd, _pgds, _pgds_len) 
 				== _pgds_len - TWO_POW(order)); 
+			// goto top_preference_violation; 
 			return (PageDescriptor*)aligned_pgd_l; 
 		} else {
 			// unreachable!
@@ -160,12 +162,28 @@ private:
 			); 
 			assert(false); 
 		}
+
+		/*
+		top_preference_violation: 
+		mm_log.messagef(
+			LogLevel::ERROR, 
+			"[buddy::buddy_of] `pgd: 0x%x` is right-aligned -- but top page 0x%x should be preferred. "
+			"This must be a problem!", 
+			aligned_pgd, 
+			aligned_pgd_l
+		); 
+		return (PageDescriptor*)aligned_pgd_l; 
+		*/
 	}
 
 	/**
 	 * Given a pointer to a block of free memory in the order "source_order", this function will
 	 * split the block in half, and insert it into the order below.
 	 * 
+	 * @attention
+	 * This function assumes that block_pointer points to the beginning of a 2^source_order-aligned 
+	 * block. 
+ 	 * 
 	 * @param block_pointer A pointer to a pointer containing the beginning of a block memory already marked free.
 	 * @param source_order The order in which the block of free memory exists.  Naturally,
 	 * the split will insert the two new blocks into the order below.
@@ -173,9 +191,6 @@ private:
 	 */
 	PageDescriptor *split_block(PageDescriptor **block_pointer, int source_order)
 	{
-		/* [IMPORTANT]
-		 * For now this function assumes each block to be strictly 2^order-sized. 
-		 */
 		const size_t src_page_count = TWO_POW(source_order); 
 		const size_t tgt_order = source_order - 1; 
 		const size_t tgt_page_count = TWO_POW(tgt_order); 
@@ -194,12 +209,15 @@ private:
 		assert(tgt_left_buddy == *block_pointer); // [?] This should be the case? 
 
 		/* [UNSAFE]
-		* Just-in-time alteration of pgd state enhances performance from O(n) alteration throughout 
-		* block cluster, but may overwrite used memory if bad impl/use. 
-		*/
+		 * Just-in-time alteration of pgd state enhances performance from O(n) alteration throughout 
+		 * block cluster, but may overwrite used memory if bad impl/use. 
+		 */
 		assert(tgt_right_buddy->type != PageDescriptorType::INVALID); 
 		tgt_right_buddy->type = PageDescriptorType::AVAILABLE; 
 
+		// [FIXME] next_free and prev_free should be used as _free_areas cache-related ptrs 
+		// i.e., at split time, _free_areas[order] swap with prev_free or next_free dep. on position in memory
+		// maintain top preference! 
 		if (tgt_left_buddy->next_free != NULL) {
 			// => block_pointer not last, need to alter src_right_buddy. 
 			PageDescriptor* src_right_buddy = tgt_left_buddy->next_free; 
@@ -293,6 +311,7 @@ public:
 		start->next_free += sizeof(*start); 
 
 		// Until last one
+		// [FIXME] O(n) time -- no good
 		start += sizeof(*start); 
 		for (size_t _ = idx + 1; _ < bound - 1; _++) {
 			assert(
