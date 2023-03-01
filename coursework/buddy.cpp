@@ -70,8 +70,24 @@ inline const size_t __idx_of(
 class BuddyPageAllocator : public PageAllocatorAlgorithm
 {
 private:
+	/* Base pointer for the page descriptor table. */
 	PageDescriptor* _pgds; 
+
+	/* Size of the page descriptor table. */
 	const uint64_t _pgds_len; 
+
+	/* 
+	 * Limit pointer for the page descriptor table. Points to (last + 1) element. 
+	 *
+	 * [DANGER] NEVER dereference -- segfault coredump otherwise. 
+	 */
+	const uintptr_t _pgds_arr_lim; 
+
+	/*
+	 * Array of page descriptor pointers for caching the beginning of first pgd for contiguous 
+	 * 2^order page cluster allocations. 
+	 */
+	PageDescriptor* _free_areas[MAX_ORDER+1];
 
 	/** 
 	 * Given a page descriptor, and an order, returns the buddy PGD.  The buddy could either be
@@ -90,7 +106,7 @@ private:
 		assert(0 <= order && order <= MAX_ORDER); 
 		assert(__in_ptr_bound(pgd, _pgds, _pgds_len)); 
  
-		// [?] Necessity? Can any `pgd` be assumed to be start of ordered page cluster? 
+		// [?] Necessity? Can any `pgd` be assumed to be start of 2^order page cluster? 
 		// Align `pgd` to 2^order idx boundary, as shown in Fig.1. 
 		const uintptr_t aligned_pgd = (uintptr_t)pgd / TWO_POW(order) * TWO_POW(order); 
 		if (aligned_pgd != (uintptr_t)pgd) {
@@ -157,7 +173,54 @@ private:
 	 */
 	PageDescriptor *split_block(PageDescriptor **block_pointer, int source_order)
 	{
-        // TODO: Implement me!
+		/* [IMPORTANT]
+		 * For now this function assumes each block to be strictly 2^order-sized. 
+		 */
+		const size_t src_page_count = TWO_POW(source_order); 
+		const size_t tgt_order = source_order - 1; 
+		const size_t tgt_page_count = TWO_POW(tgt_order); 
+
+		/* Assert block_pointer is available for allocation */
+		assert((*block_pointer)->type == PageDescriptorType::PageDescriptorType::AVAILABLE); 
+
+		/* Make hypothetical next order boundary. */
+		PageDescriptor* tgt_left_buddy; 
+		PageDescriptor* tgt_right_buddy; 
+		{ // Clean up function scope
+			PageDescriptor* tgt_buddy = buddy_of(*block_pointer, tgt_order); 
+			tgt_left_buddy = (*block_pointer <= tgt_buddy) ? *block_pointer : tgt_buddy; 
+			tgt_right_buddy = (*block_pointer > tgt_buddy) ? *block_pointer : tgt_buddy; 
+		}
+		assert(tgt_left_buddy == *block_pointer); // [?] This should be the case? 
+
+		/* [UNSAFE]
+		* Just-in-time alteration of pgd state enhances performance from O(n) alteration throughout 
+		* block cluster, but may overwrite used memory if bad impl/use. 
+		*/
+		assert(tgt_right_buddy->type != PageDescriptorType::INVALID); 
+		tgt_right_buddy->type = PageDescriptorType::AVAILABLE; 
+
+		if (tgt_left_buddy->next_free != NULL) {
+			// => block_pointer not last, need to alter src_right_buddy. 
+			PageDescriptor* src_right_buddy = tgt_left_buddy->next_free; 
+			/* Assert block_pointer until its next_free has EQUAL pages for given source_order */
+			assert(src_right_buddy - tgt_left_buddy == src_page_count * sizeof(PageDescriptor)); 
+
+			tgt_left_buddy->next_free = tgt_right_buddy; 
+			tgt_right_buddy->next_free = src_right_buddy;
+
+			tgt_right_buddy->prev_free = tgt_left_buddy; 
+			src_right_buddy->prev_free = tgt_right_buddy; 
+		} else {
+			// => block_pointer i.e., tgt_left_buddy is last at source_order.
+			assert(_pgds_arr_lim - (uintptr_t)tgt_left_buddy == src_page_count * sizeof(PageDescriptor)); 
+
+			tgt_right_buddy->next_free = tgt_left_buddy->next_free; // i.e., NULL
+			tgt_left_buddy->next_free = tgt_right_buddy; 
+			tgt_right_buddy->prev_free = tgt_left_buddy; 
+		}
+
+		return tgt_left_buddy; 
 	}
 
 	/**
@@ -169,6 +232,8 @@ private:
 	PageDescriptor **merge_block(PageDescriptor **block_pointer, int source_order)
 	{
         // TODO: Implement me!
+		const size_t page_count = TWO_POW(source_order); 
+
 	}
 
 public:
@@ -180,7 +245,22 @@ public:
 	 */
 	PageDescriptor *allocate_pages(int order) override
 	{
-        // TODO: Implement me!
+		PageDescriptor* pgd = _pgds; 
+		while ((uintptr_t)pgd <= _pgds_arr_lim - TWO_POW(order)) {
+			PageDescriptor* pgd_next = pgd->next_free; // [!] Assumes correct `next_free` impl
+			pfn_t pfn_diff = (pgd_next - pgd) / sizeof(PageDescriptor); 
+			if (TWO_POW(order) <= pfn_diff) {
+				// pgd -- pgd_next has enough free space for contiguous allocation
+				// Split block, which may or may not be an actual split
+				
+				// Allocate i.e., change type
+
+				// Change _free_areas buffer
+
+				return pgd; 
+			}
+		}
+		return NULL; 
 	}
 
     /**
@@ -190,7 +270,8 @@ public:
 	 */
     void free_pages(PageDescriptor *pgd, int order) override
     {
-        // TODO: Implement me!
+		uint64_t count = TWO_POW(order); 
+		insert_page_range(pgd, count); 
     }
 
     /**
@@ -200,7 +281,37 @@ public:
      */
     virtual void insert_page_range(PageDescriptor *start, uint64_t count) override
     { 
-        // TODO: Implement me!
+		size_t idx = __idx_of(start, _pgds, _pgds_len); 
+		const size_t bound = __min(idx + count, _pgds_len); 
+		
+		// First one
+		assert(
+			start->type == PageDescriptorType::ALLOCATED || 
+			start->type == PageDescriptorType::RESERVED
+		); 
+		start->type = PageDescriptorType::AVAILABLE; 
+		start->next_free += sizeof(*start); 
+
+		// Until last one
+		start += sizeof(*start); 
+		for (size_t _ = idx + 1; _ < bound - 1; _++) {
+			assert(
+				start->type == PageDescriptorType::ALLOCATED || 
+				start->type == PageDescriptorType::RESERVED
+			); 
+			start->type = PageDescriptorType::AVAILABLE; 
+			start->prev_free = start - sizeof(*start); 
+			start->next_free = start + sizeof(*start); 
+			start = start->next_free;
+		}
+
+		// Last one
+		assert(
+			start->type == PageDescriptorType::ALLOCATED || 
+			start->type == PageDescriptorType::RESERVED
+		); 
+		start->type = PageDescriptorType::AVAILABLE; 
+		start->prev_free = start - sizeof(*start); 
     }
 
     /**
@@ -210,7 +321,23 @@ public:
      */
     virtual void remove_page_range(PageDescriptor *start, uint64_t count) override
     {
-        // TODO: Implement me!
+		size_t idx = __idx_of(start, _pgds, _pgds_len); 
+		const size_t bound = __min(idx + count, _pgds_len); 
+		PageDescriptor* prev_free = start->prev_free; 
+		PageDescriptor* next_free = (bound == _pgds_len) 
+			? NULL 
+			: start + (sizeof(*start) * count); // Assuming that is, in fact, free... 
+		// [FIXME?] This function is "called at init" but can we assume that memory is all free from 
+		// the kernel reservation onwards (low-high memory)? 
+		
+		while (idx < bound) {
+			assert(start->type != PageDescriptorType::INVALID); 
+			start->type = PageDescriptorType::RESERVED; 
+			start->prev_free = prev_free; 
+			start->next_free = next_free; 
+			start += sizeof(*start); 
+			idx++; 
+		}
     }
 
 	/**
@@ -221,6 +348,8 @@ public:
 	{
 		_pgds = page_descriptors; 
 		uint64_t _pgds_len (nr_page_descriptors); 
+		uintptr_t _pgds_arr_lim ((uintptr_t)_pgds + _pgds_len * sizeof(PageDescriptor)); 
+		// [TODO] _free_areas? 
 	}
 
 	/**
@@ -252,10 +381,6 @@ public:
 			mm_log.messagef(LogLevel::DEBUG, "%s", buffer);
 		}
 	}
-
-
-private:
-	PageDescriptor *_free_areas[MAX_ORDER+1];
 };
 
 /* --- DO NOT CHANGE ANYTHING BELOW THIS LINE --- */
