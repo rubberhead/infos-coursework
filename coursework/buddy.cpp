@@ -113,7 +113,7 @@ private:
 			assert(__in_ptr_bound((PageDescriptor*)aligned_pgd, _pgds, _pgds_len)); 
 			mm_log.messagef(
 				LogLevel::ERROR, 
-				"[buddy::buddy_of] `pgd: 0x%x` not aligned properly to start of page cluster: "
+				"[buddy::buddy_of] `pgd: 0x%x` not aligned properly to start of block: "
 				"Order: %d -- delta: %d; fixed to `aligned_pgd: 0x%x`.", 
 				pgd, 
 				order, 
@@ -138,7 +138,6 @@ private:
 			const size_t idx_aligned_pgd = __idx_of((PageDescriptor*)aligned_pgd, _pgds, _pgds_len); 
 			if (idx_aligned_pgd % TWO_POW(order + 1)) {
 				// => `aligned_pgd` right buddy 
-				// goto top_preference_violation; 
 				return (PageDescriptor*)aligned_pgd_l; 
 			} else {
 				// => `aligned_pgd` left buddy
@@ -152,7 +151,6 @@ private:
 			// => Only L in "array"; `aligned_pgd` last 
 			assert(__idx_of((PageDescriptor*)aligned_pgd, _pgds, _pgds_len) 
 				== _pgds_len - TWO_POW(order)); 
-			// goto top_preference_violation; 
 			return (PageDescriptor*)aligned_pgd_l; 
 		} else {
 			// unreachable!
@@ -162,18 +160,6 @@ private:
 			); 
 			assert(false); 
 		}
-
-		/*
-		top_preference_violation: 
-		mm_log.messagef(
-			LogLevel::ERROR, 
-			"[buddy::buddy_of] `pgd: 0x%x` is right-aligned -- but top page 0x%x should be preferred. "
-			"This must be a problem!", 
-			aligned_pgd, 
-			aligned_pgd_l
-		); 
-		return (PageDescriptor*)aligned_pgd_l; 
-		*/
 	}
 
 	/**
@@ -183,6 +169,9 @@ private:
 	 * @attention
 	 * This function assumes that block_pointer points to the beginning of a 2^source_order-aligned 
 	 * block. 
+	 * 
+	 * @attention
+	 * This function passes assertion iff 0 < source_order <= MAX_ORDER. 
  	 * 
 	 * @param block_pointer A pointer to a pointer containing the beginning of a block memory already marked free.
 	 * @param source_order The order in which the block of free memory exists.  Naturally,
@@ -191,14 +180,34 @@ private:
 	 */
 	PageDescriptor *split_block(PageDescriptor **block_pointer, int source_order)
 	{
+		assert(0 < source_order && source_order <= MAX_ORDER); 
+
 		const size_t src_page_count = TWO_POW(source_order); 
 		const size_t tgt_order = source_order - 1; 
 		const size_t tgt_page_count = TWO_POW(tgt_order); 
 
-		/* Assert block_pointer is available for allocation */
-		assert((*block_pointer)->type == PageDescriptorType::PageDescriptorType::AVAILABLE); 
+		/* Assert block_pointer is available for allocation <1> */
+		assert((*block_pointer)->type == PageDescriptorType::AVAILABLE); 
 
-		/* Make hypothetical next order boundary. */
+		/* 
+		 * Alter _free_area cache ptr for 2^src_order cluster. Defaults to top memory unless nullptr. 
+		 * 
+		 * src_left_neighbour describes prev. free block @ order `src_order` -- must be NULL.  
+		 * src_right_neighbour describes next free block @ order `src_order` -- not necessarily buddies. 
+		 */
+		PageDescriptor* src_left_neighbour = (*block_pointer)->prev_free;  // Must be NULL
+		assert(src_left_neighbour == NULL); 
+
+		PageDescriptor* src_right_neighbour = (*block_pointer)->next_free; // May be NULL
+		// By invariant, next top memory has to be:  
+		_free_areas[source_order] = src_right_neighbour; // actual next or NULL 
+
+		/* 
+		 * Make hypothetical next order boundary. 
+		 * 
+		 * tgt_left_buddy describes left buddy block @ order `tgt_order` just freed. 
+		 * tgt_right_buddy describes right buddy block @ order `tgt_order` just freed. 
+		 */
 		PageDescriptor* tgt_left_buddy; 
 		PageDescriptor* tgt_right_buddy; 
 		{ // Clean up function scope
@@ -206,36 +215,105 @@ private:
 			tgt_left_buddy = (*block_pointer <= tgt_buddy) ? *block_pointer : tgt_buddy; 
 			tgt_right_buddy = (*block_pointer > tgt_buddy) ? *block_pointer : tgt_buddy; 
 		}
-		assert(tgt_left_buddy == *block_pointer); // [?] This should be the case? 
+		assert(tgt_left_buddy == *block_pointer); // [Defn?]
 
-		/* [UNSAFE]
-		 * Just-in-time alteration of pgd state enhances performance from O(n) alteration throughout 
-		 * block cluster, but may overwrite used memory if bad impl/use. 
-		 */
-		assert(tgt_right_buddy->type != PageDescriptorType::INVALID); 
+		/* Alter left buddy state */
+		assert(tgt_left_buddy->type == PageDescriptorType::AVAILABLE); // Ref. <1>
+
+		/* Alter right buddy state */
+		assert(tgt_right_buddy->type != PageDescriptorType::INVALID); // [Spec?]
 		tgt_right_buddy->type = PageDescriptorType::AVAILABLE; 
+		
+		/* Alter _free_area cache AND prev_free, next_free */
+		if (_free_areas[tgt_order] == NULL) {
+			// => First time allocation, tgt_left_buddy guaranteed top
 
-		// [FIXME] next_free and prev_free should be used as _free_areas cache-related ptrs 
-		// i.e., at split time, _free_areas[order] swap with prev_free or next_free dep. on position in memory
-		// maintain top preference! 
-		if (tgt_left_buddy->next_free != NULL) {
-			// => block_pointer not last, need to alter src_right_buddy. 
-			PageDescriptor* src_right_buddy = tgt_left_buddy->next_free; 
-			/* Assert block_pointer until its next_free has EQUAL pages for given source_order */
-			assert(src_right_buddy - tgt_left_buddy == src_page_count * sizeof(PageDescriptor)); 
+			// Before tgt_left_buddy link...
+			tgt_left_buddy->prev_free = NULL; 
 
+			// Between buddies link...
 			tgt_left_buddy->next_free = tgt_right_buddy; 
-			tgt_right_buddy->next_free = src_right_buddy;
-
 			tgt_right_buddy->prev_free = tgt_left_buddy; 
-			src_right_buddy->prev_free = tgt_right_buddy; 
+
+			// After tgt_right_buddy link...
+			tgt_right_buddy->next_free = NULL;
+
+			// Maintain _free_areas invariant
+			_free_areas[tgt_order] = tgt_left_buddy;  
+
+		} else if (_free_areas[tgt_order] + sizeof(PageDescriptor) * tgt_page_count <= tgt_left_buddy) {
+			// => _free_areas[tgt_order] strictly on top of tgt_left_buddy
+
+			/* [NO FAIL]
+			 * Ensure current cached tgt_order block's prev_free is NULL i.e., is topmost. 
+			 * This algorithm guarantees that _free_areas always hold the topmost block allocatable (or will it?)
+			 */
+			assert(_free_areas[tgt_order]->prev_free == NULL); 
+
+			/* [NO FAIL]
+			 * Ensure no overlap btwn
+			 * ------------------------   --------------------------------   -----------------------------------
+			 * |_free_areas[tgt_order]|...|tgt_left_buddy|tgt_right_buddy|...|_free_areas[tgt_order]->next_free|
+			 * ------------------------   --------------------------------   -----------------------------------
+			 */
+			assert(
+				_free_areas[tgt_order]->next_free == NULL || 
+				_free_areas[tgt_order]->next_free >= 
+				tgt_right_buddy + sizeof(PageDescriptor) * tgt_page_count
+			); 
+
+			// Before tgt_left_buddy link...
+			tgt_left_buddy->prev_free = _free_areas[tgt_order]; 
+			auto tmp_next_free = _free_areas[tgt_order]->next_free; 
+			_free_areas[tgt_order]->next_free = tgt_left_buddy; 
+
+			// Between buddies link...
+			tgt_left_buddy->next_free = tgt_right_buddy; 
+			tgt_right_buddy->prev_free = tgt_left_buddy; 
+
+			// After tgt_right_buddy link...
+			tgt_right_buddy->next_free = tmp_next_free; 
+			if (tmp_next_free != NULL) tmp_next_free->prev_free = tgt_right_buddy; 
+
+			// Maintain _free_areas invariant
+			// Already maintained since tgt_left_buddy is not the topmost block. 
+
+		} else if (tgt_right_buddy + sizeof(PageDescriptor) * tgt_page_count <= _free_areas[tgt_order]) {
+			// => _free_areas[tgt_order] strictly on bottom of tgt_right_buddy
+
+			/* [NO FAIL]
+			 * Ensure current cached tgt_order block's prev_free is NULL i.e., is topmost. 
+			 * This algorithm guarantees that _free_areas always hold the topmost block allocatable (or will it?)
+			 * 
+			 * This also ensures block boundary validation, like above. 
+			 */
+			assert(_free_areas[tgt_order]->prev_free == NULL); 
+
+			// Before tgt_left_buddy link...
+			tgt_left_buddy->prev_free = NULL; 
+			
+			// Between buddies link...
+			tgt_left_buddy->next_free = tgt_right_buddy; 
+			tgt_right_buddy->prev_free = tgt_left_buddy; 
+
+			// After tgt_right_buddy link...
+			tgt_right_buddy->next_free = _free_areas[tgt_order];
+			_free_areas[tgt_order]->prev_free = tgt_right_buddy; 
+
+			// Maintain _free_areas invariant
+			_free_areas[tgt_order] = tgt_left_buddy; 
+
 		} else {
-			// => block_pointer i.e., tgt_left_buddy is last at source_order.
-			assert(_pgds_arr_lim - (uintptr_t)tgt_left_buddy == src_page_count * sizeof(PageDescriptor)); 
-
-			tgt_right_buddy->next_free = tgt_left_buddy->next_free; // i.e., NULL
-			tgt_left_buddy->next_free = tgt_right_buddy; 
-			tgt_right_buddy->prev_free = tgt_left_buddy; 
+			// unreachable! 
+			mm_log.messagef(
+				LogLevel::FATAL, 
+				"[buddy::split_block] Block segmentation fault when trying to free pgd@0x%x -- pfn:0x%x. "
+				"Crashed!", 
+				tgt_left_buddy, 
+				sys.mm().pgalloc().pgd_to_pfn(tgt_left_buddy)
+			); 
+			dump_state(); 
+			assert(false); 
 		}
 
 		return tgt_left_buddy; 
@@ -250,6 +328,9 @@ private:
 	PageDescriptor **merge_block(PageDescriptor **block_pointer, int source_order)
 	{
         // TODO: Implement me!
+		assert(0 <= source_order && source_order < MAX_ORDER); 
+
+
 		const size_t page_count = TWO_POW(source_order); 
 
 	}
@@ -368,7 +449,8 @@ public:
 		_pgds = page_descriptors; 
 		uint64_t _pgds_len (nr_page_descriptors); 
 		uintptr_t _pgds_arr_lim ((uintptr_t)_pgds + _pgds_len * sizeof(PageDescriptor)); 
-		// [TODO] _free_areas? 
+		// [TODO] Initialize _free_areas to NULL
+		_free_areas[MAX_ORDER] = page_descriptors;
 	}
 
 	/**
