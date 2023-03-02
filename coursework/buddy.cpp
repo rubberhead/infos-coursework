@@ -70,8 +70,9 @@ inline const size_t __idx_of(
 class BuddyPageAllocator : public PageAllocatorAlgorithm
 {
 private:
+	// [TODO]: Alter _pgds to proper array. 
 	/* Base pointer for the page descriptor table. */
-	PageDescriptor* _pgds; 
+	PageDescriptor* const _pgds; 
 
 	/* Size of the page descriptor table. */
 	const uint64_t _pgds_len; 
@@ -190,17 +191,16 @@ private:
 		assert((*block_pointer)->type == PageDescriptorType::AVAILABLE); 
 
 		/* 
-		 * Alter _free_area cache ptr for 2^src_order cluster. Defaults to top memory unless nullptr. 
+		 * Alter _free_area cache ptr for 2^src_order block. Defaults to top memory unless nullptr. 
 		 * 
-		 * src_left_neighbour describes prev. free block @ order `src_order` -- must be NULL.  
+		 * src_left_neighbour describes prev. free block @ order `src_order` -- must be NULL?    
 		 * src_right_neighbour describes next free block @ order `src_order` -- not necessarily buddies. 
 		 */
-		PageDescriptor* src_left_neighbour = (*block_pointer)->prev_free;  // Must be NULL
+		PageDescriptor* src_left_neighbour = (*block_pointer)->prev_free;  // Must be NULL? 
 		assert(src_left_neighbour == NULL); 
-
 		PageDescriptor* src_right_neighbour = (*block_pointer)->next_free; // May be NULL
 		// By invariant, next top memory has to be:  
-		_free_areas[source_order] = src_right_neighbour; // actual next or NULL 
+		_free_areas[source_order] = src_right_neighbour; // next or NULL 
 
 		/* 
 		 * Make hypothetical next order boundary. 
@@ -330,9 +330,106 @@ private:
         // TODO: Implement me!
 		assert(0 <= source_order && source_order < MAX_ORDER); 
 
+		const size_t src_page_count = TWO_POW(source_order); 
+		const size_t tgt_order = source_order + 1; 
+		const size_t tgt_page_count = TWO_POW(tgt_order); 
 
-		const size_t page_count = TWO_POW(source_order); 
+		/* Assert block_pointer is available for allocation  */
+		assert((*block_pointer)->type == PageDescriptorType::AVAILABLE); 
 
+		/* Alter _free_area cache for 2^src_order block. Defaults to top memory unless nullptr. */
+		PageDescriptor* src_left_neighbour = (*block_pointer)->prev_free; 
+		assert(src_left_neighbour == NULL); 
+		PageDescriptor* src_right_neighbour = (*block_pointer)->next_free; 
+		if (src_right_neighbour != buddy_of(*block_pointer, source_order)) { // Must be buddy
+			mm_log.messagef(
+				LogLevel::FATAL, 
+				"[buddy::merge_block] Block alignment fault when trying to merge buddies (@0x%x, @0x%x). "
+				"Crashed!", 
+				*block_pointer, 
+				src_right_neighbour
+			); 
+			dump_state(); 
+			assert(false); 
+		} 
+		// Likewise by invariant: 
+		_free_areas[source_order] = src_right_neighbour->next_free; // next or NULL
+
+		/* Make hypothetical next order boundary. */
+		PageDescriptor* tgt_block = (*block_pointer); 
+
+		/* Alter right src block state */
+		assert(src_right_neighbour->type != PageDescriptorType::INVALID); 
+		src_right_neighbour->type = PageDescriptorType::ALLOCATED; 
+
+		/* Alter _free_area cache AND prev_free, next_free */
+		if (_free_areas[tgt_order] == NULL) {
+			// => First time allocation, tgt_block guaranteed top
+
+			// Before tgt_block link...
+			tgt_block->prev_free = NULL; 
+
+			// After tgt_block link...
+			tgt_block->next_free = NULL; 
+
+			// Maintain _free_areas invariant
+			_free_areas[tgt_order] = tgt_block; 
+		} else if (_free_areas[tgt_order] + sizeof(PageDescriptor) * tgt_page_count <= tgt_block) {
+			// => _free_areas[tgt_order] strictly before tgt_block, do not update _free_areas
+
+			/* [NO FAIL]
+			 * Ensure no overlap btwn
+			 * ------------------------   -----------   -----------------------------------
+			 * |_free_areas[tgt_order]|...|tgt_block|...|_free_areas[tgt_order]->next_free|
+			 * ------------------------   -----------   -----------------------------------
+			 */
+			assert(
+				_free_areas[tgt_order]->next_free == NULL || 
+				tgt_block + sizeof(PageDescriptor) * tgt_page_count <= _free_areas[tgt_order]->next_free
+			); 
+
+			// Before tgt_block link...
+			auto tmp_block = _free_areas[tgt_order]->next_free; 
+			tgt_block->prev_free = _free_areas[tgt_order];  
+			_free_areas[tgt_order]->next_free = tgt_block; 
+
+			// After tgt_block link...
+			tgt_block->next_free = tmp_block; 
+			tmp_block->prev_free = tgt_block; 
+
+		} else if (tgt_block + sizeof(PageDescriptor) * tgt_page_count <= _free_areas[tgt_order]) {
+			// => _free_areas[tgt_order] strictly after tgt_block
+
+			/* [NO FAIL]
+			 * Ensure _free_areas[tgt_order] has no prev_free i.e., is NULL
+			 */
+			assert(_free_areas[tgt_order]->prev_free == NULL); 
+
+			// Before tgt_block link...
+			tgt_block->prev_free = NULL; 
+
+			// After tgt_block link...
+			tgt_block->next_free = _free_areas[tgt_order]; 
+			_free_areas[tgt_order]->prev_free = tgt_block; 
+
+			// Maintain invariant in _free_areas
+			_free_areas[tgt_order] = tgt_block; 
+		} else {
+			// unreachable! 
+			mm_log.messagef(
+				LogLevel::FATAL, 
+				"[buddy::merge_block] Block segmentation fault when trying to merge "
+				"(pgd@0x%x) btwn (pgd@0x%x, pgd@0x%x, pgd@0x%x). Crashed!", 
+				tgt_block, 
+				_free_areas[tgt_order]->prev_free, 
+				_free_areas[tgt_order], 
+				_free_areas[tgt_order]->next_free
+			); 
+			dump_state(); 
+			assert(false); 
+		}
+
+		return &(_free_areas[tgt_order]); // [Spec?]
 	}
 
 public:
@@ -344,22 +441,27 @@ public:
 	 */
 	PageDescriptor *allocate_pages(int order) override
 	{
-		PageDescriptor* pgd = _pgds; 
-		while ((uintptr_t)pgd <= _pgds_arr_lim - TWO_POW(order)) {
-			PageDescriptor* pgd_next = pgd->next_free; // [!] Assumes correct `next_free` impl
-			pfn_t pfn_diff = (pgd_next - pgd) / sizeof(PageDescriptor); 
-			if (TWO_POW(order) <= pfn_diff) {
-				// pgd -- pgd_next has enough free space for contiguous allocation
-				// Split block, which may or may not be an actual split
-				
-				// Allocate i.e., change type
+		if (_free_areas[order] != NULL) {
+			// => Exists free block of this order
+			auto tmp = _free_areas[order]; 
+			tmp->type = PageDescriptorType::ALLOCATED; 
+			_free_areas[order] = _free_areas[order]->next_free; 
+			return tmp; 
+		}
 
-				// Change _free_areas buffer
-
-				return pgd; 
+		// Since all free pages are buckled up to its largest order, 
+		// We can allocate a page as long as there exists free pages of larger order. 
+		size_t from_order = -1; 
+		for (size_t o = order + 1; o <= MAX_ORDER; o++) {
+			if (_free_areas[o] != NULL) {
+				from_order = o;
+				break; 
 			}
 		}
-		return NULL; 
+		if (from_order == -1) return NULL; // No free page found. Not enough memory. 
+
+		split_block(&_free_areas[from_order], from_order); 
+		return allocate_pages(order); // Recurse w/ _free_areas[from_order] split to lower order.
 	}
 
     /**
@@ -369,8 +471,11 @@ public:
 	 */
     void free_pages(PageDescriptor *pgd, int order) override
     {
-		uint64_t count = TWO_POW(order); 
-		insert_page_range(pgd, count); 
+		// Recursive too? 
+
+
+
+
     }
 
     /**
@@ -380,38 +485,7 @@ public:
      */
     virtual void insert_page_range(PageDescriptor *start, uint64_t count) override
     { 
-		size_t idx = __idx_of(start, _pgds, _pgds_len); 
-		const size_t bound = __min(idx + count, _pgds_len); 
-		
-		// First one
-		assert(
-			start->type == PageDescriptorType::ALLOCATED || 
-			start->type == PageDescriptorType::RESERVED
-		); 
-		start->type = PageDescriptorType::AVAILABLE; 
-		start->next_free += sizeof(*start); 
-
-		// Until last one
-		// [FIXME] O(n) time -- no good
-		start += sizeof(*start); 
-		for (size_t _ = idx + 1; _ < bound - 1; _++) {
-			assert(
-				start->type == PageDescriptorType::ALLOCATED || 
-				start->type == PageDescriptorType::RESERVED
-			); 
-			start->type = PageDescriptorType::AVAILABLE; 
-			start->prev_free = start - sizeof(*start); 
-			start->next_free = start + sizeof(*start); 
-			start = start->next_free;
-		}
-
-		// Last one
-		assert(
-			start->type == PageDescriptorType::ALLOCATED || 
-			start->type == PageDescriptorType::RESERVED
-		); 
-		start->type = PageDescriptorType::AVAILABLE; 
-		start->prev_free = start - sizeof(*start); 
+		// TODO! 
     }
 
     /**
@@ -421,23 +495,7 @@ public:
      */
     virtual void remove_page_range(PageDescriptor *start, uint64_t count) override
     {
-		size_t idx = __idx_of(start, _pgds, _pgds_len); 
-		const size_t bound = __min(idx + count, _pgds_len); 
-		PageDescriptor* prev_free = start->prev_free; 
-		PageDescriptor* next_free = (bound == _pgds_len) 
-			? NULL 
-			: start + (sizeof(*start) * count); // Assuming that is, in fact, free... 
-		// [FIXME?] This function is "called at init" but can we assume that memory is all free from 
-		// the kernel reservation onwards (low-high memory)? 
-		
-		while (idx < bound) {
-			assert(start->type != PageDescriptorType::INVALID); 
-			start->type = PageDescriptorType::RESERVED; 
-			start->prev_free = prev_free; 
-			start->next_free = next_free; 
-			start += sizeof(*start); 
-			idx++; 
-		}
+		// TODO!
     }
 
 	/**
@@ -446,10 +504,16 @@ public:
 	 */
 	bool init(PageDescriptor *page_descriptors, uint64_t nr_page_descriptors) override
 	{
-		_pgds = page_descriptors; 
+		PageDescriptor* _pgds (page_descriptors); 
+		_pgds->prev_free = NULL; 
+		_pgds->next_free = NULL;
+		_pgds->type = PageDescriptorType::AVAILABLE; 
+
 		uint64_t _pgds_len (nr_page_descriptors); 
 		uintptr_t _pgds_arr_lim ((uintptr_t)_pgds + _pgds_len * sizeof(PageDescriptor)); 
-		// [TODO] Initialize _free_areas to NULL
+
+		// Initialize with 1x2^18 block in allocable mem
+		PageDescriptor* _free_areas[MAX_ORDER + 1] { NULL }; 
 		_free_areas[MAX_ORDER] = page_descriptors;
 	}
 
