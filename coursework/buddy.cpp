@@ -26,27 +26,7 @@ inline const bool __in_ptr_bound(
 	const T* base_ptr, 
 	const uint64_t len
 ) {
-	const size_t alignment = sizeof(T); 
-	return base_ptr <= elem_ptr && elem_ptr < base_ptr + len * alignment; 
-}
-
-/**
- * Checks if `block_left_ptr` is aligned to given order wrt `base_ptr[len]`. 
- * 
- * @attention
- * Does not guarantee that `block_left_ptr` is in between `base_ptr` and `base_ptr + len`. 
- */
-template<typename T>
-inline const bool __is_aligned_by_order(
-	const T* block_left_ptr, 
-	const T* base_ptr, 
-	const uint64_t len, 
-	const uint64_t order
-) {
-	// assert(__in_ptr_bound(block_left_ptr, base_ptr, len)); 
-	const size_t pgds_in_block = TWO_POW(order); 
-	const size_t alignment = sizeof(T) * pgds_in_block;
-	return (block_left_ptr - base_ptr) % alignment == 0; 
+	return base_ptr <= elem_ptr && elem_ptr < base_ptr + len; 
 }
 
 /**
@@ -79,8 +59,8 @@ inline T* __prev_block_ptr(
 	const uint64_t order
 ) {
 	// assert(__is_aligned_by_order(block_ptr, base_ptr, len, order)); 
-	const size_t alignment = sizeof(T) << order; 
-	T* result_ptr (block_ptr - alignment); 
+	const size_t alignment = TWO_POW(order); 
+	T* result_ptr = block_ptr - alignment; 
 	if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
 		return NULL; 
 	} else {
@@ -101,8 +81,8 @@ inline T* __next_block_ptr(
 	const uint64_t order
 ) {
 	// assert(__is_aligned_by_order(block_ptr, base_ptr, len, order)); 
-	const size_t alignment = sizeof(T) << order; 
-	T* result_ptr (block_ptr + alignment); 
+	const size_t alignment = TWO_POW(order); 
+	T* result_ptr = block_ptr + alignment; 
 	if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
 		return NULL; 
 	} else {
@@ -136,7 +116,7 @@ private:
 	 * Array of page descriptor pointers for caching the beginning of first pgd for contiguous 
 	 * 2^order page cluster allocations. 
 	 */
-	PageDescriptor *_free_areas[MAX_ORDER+1];
+	PageDescriptor *_free_areas[MAX_ORDER+1] { NULL };
 
 	/** Given a page descriptor, and an order, returns the buddy PGD.  The buddy could either be
 	 * to the left or the right of PGD, in the given order.
@@ -186,9 +166,16 @@ private:
         // TODO: Implement me!
 		PageDescriptor* block_ptr = *block_pointer; 
 		assert(block_ptr->type != PageDescriptorType::INVALID); 
+		mm_log.messagef(
+			LogLevel::DEBUG, 
+			"[buddy::split_block] block_ptr@0x%x, next_free@0x%x, delta = 0x%x", 
+			block_ptr, 
+			block_ptr->next_free, 
+			block_ptr->next_free - block_ptr
+		); 
 		assert(
 			block_ptr->next_free == NULL || 
-			block_ptr->next_free - block_ptr >= sizeof(PageDescriptor) << source_order
+			block_ptr->next_free - block_ptr >= TWO_POW(source_order)
 		);
 
 		/* Maintain pgd & _free_areas state */
@@ -219,7 +206,7 @@ private:
 		half_left->next_free = half_right; 
 		half_right->prev_free = half_left; 
 
-		size_t tgt_alignment = sizeof(PageDescriptor) << tgt_order;
+		size_t tgt_alignment = TWO_POW(tgt_order);
 		if (_free_areas[tgt_order] == NULL) {
 			// => First time splitting into tgt_order
 			half_left->prev_free = NULL; 
@@ -231,32 +218,68 @@ private:
 			/* Ensure no block segmentation faults & invariant */ 
 			assert(_free_areas[tgt_order]->prev_free == NULL); 
 
-			/* Alter states */
+			/* Alter linkage */
 			half_left->prev_free = NULL; 
 			half_right->next_free = _free_areas[tgt_order]; 
 			_free_areas[tgt_order]->prev_free = half_right; 
 			_free_areas[tgt_order] = half_left; 
 
 		} else if (_free_areas[tgt_order] + tgt_alignment <= half_left) {
-			// => Both blocks more bottom than current tgt_order entry, insert-on-right. 
+			// => Both blocks more bottom than current tgt_order entry, insert-on-right
+			// At least this is the intended behavior...
+
 			/* [NOTE]
 			 * We could either iterate over the linked pgds to find the correct placement for top 
 			 * memory priority or insert it as we wish (e.g., FIFO). 
 			 * 
-			 * The former effectively makes the allocator O(n), but the latter causes excessive 
-			 * external fragmentation. 
+			 * The former effectively makes the allocator O(#pfnlg(s)) -> O(lg(#pfn)*lg(s)) where 
+			 * s is size of allocation, #pfn is number of pages...
+			 * But the latter causes excessive external fragmentation! 
 			 * 
-			 * Think this could either be solved using O(1) heaps or "de-fragmentation" routines?
-			 * For now, just append at back.  
+			 * Think this could either be solved using O(1) heaps or "de-fragmentation" routines? 
+			 * Memory use for O(1) heap would be O(nlg(n)) methinks. 
+			 * 
+			 * There are also techniques for improving linked list sorted insertion to O(lg(n)) time, 
+			 * but for now, do the same thing as above. 
 			 */
+			/* Ensure no block segmentation faults & invariant */
+			assert(
+				_free_areas[tgt_order]->next_free == NULL || 
+				half_right + tgt_alignment <= _free_areas[tgt_order]->next_free 
+			); 
 
-			/* Ensure no block segmentation faults */
-			
+			/* Alter linkage */
+			half_left->prev_free = NULL; 
+			half_right->next_free = _free_areas[tgt_order]; 
+			_free_areas[tgt_order]->prev_free = half_right; 
+			_free_areas[tgt_order] = half_left; 
 
+		} else {
+			// Segmentation fault
+			mm_log.message(
+				LogLevel::FATAL, 
+				"[buddy::split_block] Block segmentation fault. Crashed!"
+			); 
+			mm_log.messagef(
+				LogLevel::DEBUG, 
+				"[buddy::split_block] Attempted to split {pgd@0x%x, order: %d} to "
+				"({pgd@0x%x, order: %d}, {pgd@0x%x, order: %d}) and insert wrt "
+				"({pgd@0x%x, order: %d} -> {pgd@0x%x, order: %d}), but found segmentation fault.", 
+				block_ptr, 
+				source_order, 
+				half_left, 
+				tgt_order, 
+				half_right, 
+				tgt_alignment, 
+				_free_areas[tgt_order], 
+				tgt_order, 
+				_free_areas[tgt_order]->next_free, 
+				(_free_areas[tgt_order]->next_free == NULL) ? -1 : tgt_order
+			); 
+			assert(false); 
 		}
 
-		
-		return NULL; 
+		return half_left; 
 	}
 
 	/**
@@ -294,11 +317,20 @@ public:
 			return allocated; 
 		}
 		// => Otherwise 2 branches: 
-		// 1. Try to split larger subdivisions until exists correct order, then return
-		// 2. No larger subdivisions exist => not enough memory, return NULL. 
+		size_t from_order = -1; 
+		for (size_t o = order + 1; o <= MAX_ORDER; o++) {
+			if (_free_areas[o] != NULL) {
+				from_order = o; 
+				break; 
+			}
+		}
+		// 1. No larger subdivisions exist => not enough memory, return NULL. 
+		if (from_order == -1) return NULL; 
 
-
-		return NULL; 
+		// 2. Try to split larger subdivisions until exists correct order, then return 
+		split_block(&_free_areas[from_order], from_order); 
+		dump_state(); 
+		return allocate_pages(order); 
 	}
 
     /**
@@ -338,17 +370,16 @@ public:
 	bool init(PageDescriptor *page_descriptors, uint64_t nr_page_descriptors) override
 	{
 		/* 1. Initialize class fields */
-        PageDescriptor* _pgds_base (page_descriptors); 
-		uint64_t _pgds_len (nr_page_descriptors); 
-		uintptr_t _pgds_lim ((uintptr_t)_pgds_base + sizeof(PageDescriptor) * _pgds_len); 
-		PageDescriptor* _free_areas[MAX_ORDER + 1] { NULL }; 
+        _pgds_base = page_descriptors; 
+		_pgds_len = nr_page_descriptors;  
+		_pgds_lim = (uintptr_t)_pgds_base + sizeof(PageDescriptor) * _pgds_len; 
 
 		if (sys.mm().pgalloc().pgd_to_pfn(_pgds_base) != 0) {
 			// => _pgds_base somehow has non-0 pfn, which should not happen
 			mm_log.messagef(
 				LogLevel::FATAL, 
 				"[buddy::init] Failed to initialize page descriptor table: "
-				"PFN should begin at 0, got %d instead.", 
+				"PFN should begin at 0x0, got 0x%x instead.", 
 				sys.mm().pgalloc().pgd_to_pfn(_pgds_base)
 			); 
 			return false; 
@@ -363,6 +394,13 @@ public:
 			/* Suppose we have infinite memory. This is the next block boundary for this order */
 			size_t alignment = sizeof(PageDescriptor) << order; 
 			uintptr_t next_block_start_raw = (uintptr_t)curr_block_start + alignment; 
+			mm_log.messagef(
+				LogLevel::DEBUG, 
+				"[buddy::init] Initializing pgd@0x%x -- pfn: %x. Order = %d", 
+				curr_block_start, 
+				sys.mm().pgalloc().pgd_to_pfn(curr_block_start), 
+				order
+			); 
 
 			if (next_block_start_raw > _pgds_lim) {
 				// => Maybe can still initialize allocation with some reduced order...
@@ -372,8 +410,15 @@ public:
 				curr_base = curr_block_start; 
 			} else {
 				// => Otherwise initialize block at current order. 
-				curr_block_start->prev_free = __prev_block_ptr(curr_block_start, curr_base, curr_len, order); 
-				curr_block_start->next_free = __next_block_ptr(curr_block_start, curr_base, curr_len, order); 
+				curr_block_start->prev_free = 
+					__prev_block_ptr(curr_block_start, curr_base, curr_len, order); 
+				curr_block_start->next_free = 
+					__next_block_ptr(curr_block_start, curr_base, curr_len, order); 
+				assert(
+					curr_block_start->next_free == NULL || 
+					(uintptr_t)curr_block_start->next_free == next_block_start_raw
+				); 
+
 				curr_block_start->type = PageDescriptorType::AVAILABLE; 
 				if (_free_areas[order] == NULL) {
 					_free_areas[order] = curr_block_start; 
