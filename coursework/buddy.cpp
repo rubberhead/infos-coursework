@@ -18,7 +18,7 @@ using namespace infos::util;
 #define TWO_POW(order) 1ull << order // Overflow? Never heard of it. 
 
 /**
- * Preprocessor defines doesn't bide well with pointer arithmetics. 
+ * Preprocessor defines doesn't bide well with static analysis for pointer arithmetics. 
  * This is a wrapper for TWO_POW.
  */
 inline constexpr uint64_t __two_pow(uint32_t order) {
@@ -38,20 +38,18 @@ inline const bool __in_ptr_bound(
 }
 
 /**
- * Finds the index of `*elem_ptr` in the contiguous "array" between `base_ptr[0]` and `base_ptr[len]`. 
- * 
- * @attention
- * Assumes that `elem_ptr` is in the contiguous "array" delineated by `base_ptr` and `len`. 
+ * Finds whether `block_ptr` is aligned left wrt `base_ptr` by given order. 
+ * i.e., whether `block_ptr - base_ptr` is a multiple of 2^order.
  */
 template<typename T>
-inline const size_t __idx_of(
-	const T* elem_ptr, 
-	const T* base_ptr, 
-	const uint64_t len
+inline bool __aligned_by_order(
+	T* const block_ptr, 
+	T* const base_ptr, 
+	const uint64_t order
 ) {
-	const size_t alignment = sizeof(T); 
-	assert(__in_ptr_bound(elem_ptr, base_ptr, len)); 
-	return ((uintptr_t)elem_ptr - (uintptr_t)base_ptr) / alignment; 
+	const size_t alignment = TWO_POW(order); 
+	const size_t idx_of_block = block_ptr - base_ptr; 
+	return (idx_of_block % alignment == 0); 
 }
 
 /**
@@ -66,7 +64,7 @@ inline T* __prev_block_ptr(
 	const uint64_t len, 
 	const uint64_t order
 ) {
-	// assert(__is_aligned_by_order(block_ptr, base_ptr, len, order)); 
+	assert(__aligned_by_order(block_ptr, base_ptr, order));  
 	const size_t alignment = TWO_POW(order); 
 	T* result_ptr = block_ptr - alignment; 
 	if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
@@ -88,7 +86,7 @@ inline T* __next_block_ptr(
 	const uint64_t len, 
 	const uint64_t order
 ) {
-	// assert(__is_aligned_by_order(block_ptr, base_ptr, len, order)); 
+	assert(__aligned_by_order(block_ptr, base_ptr, order)); 
 	const size_t alignment = TWO_POW(order); 
 	T* result_ptr = block_ptr + alignment; 
 	if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
@@ -137,7 +135,7 @@ private:
 	PageDescriptor *buddy_of(PageDescriptor *pgd, int order)
 	{
 		const size_t pfn_of_pgd = sys.mm().pgalloc().pgd_to_pfn(pgd); 
-		mm_log.messagef(LogLevel::DEBUG, "Checking pfn %x -- block %d, order %d", pfn_of_pgd, pfn_of_pgd >> order, order);
+		// mm_log.messagef(LogLevel::DEBUG, "Checking pfn %x -- block %d, order %d", pfn_of_pgd, pfn_of_pgd >> order, order);
 		if ((pfn_of_pgd >> order) % 2) {
 			// => odd "block idx", return previous block
 			return __prev_block_ptr(pgd, _pgds_base, _pgds_len, order); 
@@ -180,18 +178,20 @@ private:
 		const size_t tgt_order = source_order - 1; 
 		PageDescriptor* half_left = block_ptr; 
 		PageDescriptor* half_right = buddy_of(half_left, tgt_order);
+		/*
 		mm_log.messagef(
 			LogLevel::DEBUG, 
 			"[buddy::split_block] Halves: L@0x%lx, R@0x%lx. Order: %d->%d", 
 			half_left, half_right,
 			source_order, tgt_order
-		); 
+		);
+		*/ 
 		assert(__min((uintptr_t)half_left, (uintptr_t)half_right) == (uintptr_t)half_left); 
 
-		assert(half_left->type != PageDescriptorType::INVALID); 
+		// assert(half_left->type != PageDescriptorType::INVALID); 
 		half_left->type = PageDescriptorType::AVAILABLE; 
 
-		assert(half_right->type != PageDescriptorType::INVALID); 
+		// assert(half_right->type != PageDescriptorType::INVALID); 
 		half_right->type = PageDescriptorType::AVAILABLE; 
 
 		half_left->next_free = half_right; 
@@ -271,6 +271,7 @@ private:
 			assert(false); 
 		}
 
+		/*
 		mm_log.messagef(
 			LogLevel::DEBUG, 
 			"[buddy::split_block] Split {pgd@0x%lx, order: %d} to "
@@ -278,7 +279,8 @@ private:
 			block_ptr, source_order, 
 			half_left, tgt_order, 
 			half_right, tgt_order
-		); 
+		);
+		*/ 
 		return half_left; 
 	}
 
@@ -392,6 +394,64 @@ private:
 		return &_free_areas[tgt_order]; 
 	}
 
+	/*
+	 * Helper function.
+	 * 
+	 * Alters a block of given order to RESERVED status and deletes it from _free_areas[order] LL. 
+	 * This function performs no check for memory safety whatsoever. Use with caution.
+	 */
+	void _unsafe_reserve_block(PageDescriptor* block_base, size_t order) {
+		PageDescriptor* block_lim = block_base + __two_pow(order);
+		PageDescriptor* block_buddy = buddy_of(block_base, order); 
+		assert(__in_ptr_bound(block_buddy, _pgds_base, _pgds_len)); 
+		assert(block_buddy != block_base); 
+
+		if (_free_areas[order] == block_base) {
+			// => Top of _free_areas[order] to be reserved
+			/* Alter _free_areas linkage */
+			assert(block_base->prev_free == NULL); 
+			_free_areas[order] = block_base->next_free; 
+			if (block_base->next_free != NULL) block_base->next_free->prev_free = NULL; 
+			
+			/* Store buddy ptr */
+			if (block_buddy < block_base) {
+				block_base->prev_free = block_buddy; 
+				block_base->next_free = NULL; 
+			} else {
+				block_base->prev_free = NULL; 
+				block_base->next_free = block_buddy; 
+			}
+		} else {
+			// => otherwise...
+			/* Alter _free_areas linkage */
+			assert(block_base->prev_free != NULL); 
+			block_base->prev_free->next_free = block_base->next_free; 
+			if (block_base->next_free != NULL) {
+				block_base->next_free->prev_free = block_base->prev_free; 
+			}
+
+			/* Store buddy ptr */
+			if (block_buddy < block_base) {
+				block_base->prev_free = block_buddy; 
+				block_base->next_free = NULL; 
+			} else {
+				block_base->prev_free = NULL; 
+				block_base->next_free = block_buddy; 
+			}
+		}
+
+		for (PageDescriptor* pgd = block_base; pgd < block_lim; pgd++) {
+			block_base->type = PageDescriptorType::RESERVED; 
+		}
+
+		mm_log.messagef(
+			LogLevel::INFO, 
+			"[buddy::_unsafe_reserve_block] Reserved block [pgn@0x%lx (%lx), pgn@0x%lx (%lx)).", 
+			block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
+			block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim)
+		);
+	}
+
 public:
 	/**
 	 * Allocates 2^order number of contiguous pages
@@ -413,19 +473,40 @@ public:
 				pg_from_allocated++; 
 			}
 
+			/* Alter _free_areas state */
 			assert(allocated->prev_free == NULL); 
 			_free_areas[order] = allocated->next_free; 
-
-			// allocated->next_free = NULL; 
 			_free_areas[order]->prev_free = NULL; 
+
+			/* Keep bookmark on intended buddy 
+			 * I don't like this way of implementing things at all -- one thing for more than one 
+			 * well-defined purpose. But otherwise it would be very difficult to know which 
+			 * allocation's sized to what -- difficult for freeing it up. 
+			 * 
+			 * Ideally the `PageDescriptor` type should be expanded with 1 uint8_t field to store 
+			 * order, but for potrability's sake this is used as a bandaid solution. 
+			 */
+			auto allocated_buddy = buddy_of(allocated, order); 
+			assert(__in_ptr_bound(allocated_buddy, _pgds_base, _pgds_len)); 
+			assert(allocated_buddy != allocated); 
+			if (allocated_buddy < allocated) {
+				allocated->prev_free = allocated_buddy; 
+				allocated->next_free = NULL; 
+			} else {
+				allocated->prev_free = NULL;
+				allocated->next_free = allocated_buddy; 
+			}
+			// DO NOT alter those of allocated_buddy as we don't know whether they are available 
+			// (i.e., in _free_ares) or not!
 
 			mm_log.messagef(
 				LogLevel::INFO, 
-				"[buddy::allocate_pages] Found allocable block {pgd@0x%lx, order: %d}.", 
-				allocated, 
+				"[buddy::allocate_pages] Allocated block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
+				allocated, sys.mm().pgalloc().pgd_to_pfn(allocated), 
+				allocated + __two_pow(order), sys.mm().pgalloc().pgd_to_pfn(allocated + __two_pow(order)), 
 				order
 			); 
-			dump_state(); 
+			// dump_state(); 
 			return allocated; 
 		}
 		// => Otherwise 2 branches: 
@@ -450,8 +531,11 @@ public:
 		// 2. Try to split larger subdivisions until exists correct order, then return 
 		mm_log.messagef(
 			LogLevel::DEBUG, 
-			"[buddy::allocate_pages] Splitting {pgd@0x%lx, order: %d}...", 
+			"[buddy::allocate_pages] Splitting {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}...", 
 			_free_areas[from_order], 
+			sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order]), 
+			_free_areas[from_order] + __two_pow(from_order), 
+			sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order] + __two_pow(from_order)), 
 			from_order
 		); 
 		split_block(&_free_areas[from_order], from_order); 
@@ -465,36 +549,67 @@ public:
 	 */
     void free_pages(PageDescriptor *pgd, int order) override
     {
-		uintptr_t pgd_next = (pgd->next_free == NULL) ? _pgds_lim : (uintptr_t)pgd->next_free;
-		size_t pgd_order = -1; 
-		for (size_t o = 0; o <= MAX_ORDER; o++) {
-			if ((uintptr_t)pgd + TWO_POW(o) * sizeof(PageDescriptor) == pgd_next) {
-				pgd_order = o; 
-				break; 
-			}
+		PageDescriptor* buddy_pgd = (pgd->next_free == NULL) ? pgd->prev_free : pgd->next_free; 
+		assert(buddy_pgd != NULL); 
+		assert(buddy_pgd != pgd); 
+
+		size_t pgd_alignment = (buddy_pgd > pgd) ? buddy_pgd - pgd : pgd - buddy_pgd; 
+		size_t pgd_order = __log2ceil(pgd_alignment); 
+
+		/* Free this block */
+		pgd->type = PageDescriptorType::AVAILABLE; 
+		/*
+		PageDescriptor* curr_p = pgd + 1; 
+		for (; curr_p < pgd + pgd_alignment; curr_p++) {
+			curr_p->type = PageDescriptorType::AVAILABLE; 
+		}
+		*/
+		if (_free_areas[pgd_order] == NULL) {
+			pgd->prev_free = NULL; 
+			pgd->next_free = NULL; 
+			_free_areas[pgd_order] = pgd; 
+		} else {
+			pgd->prev_free = NULL;
+			pgd->next_free = _free_areas[pgd_order]; 
+			_free_areas[pgd_order]->prev_free = pgd; 
+			_free_areas[pgd_order] = pgd; 
 		}
 
-		if (pgd_order == order) {
-			PageDescriptor* freed = pgd; 
+		/* Coalesce to larger order, if needed */
+		for (; pgd_order < order; pgd_order++) {
+			if (merge_block(&pgd, pgd_order) == NULL) break; 
+			// merge_block maintains _free_areas by itself, so no worries
+		}
 
-			PageDescriptor* pg_from_freed (freed);
-			for (uintptr_t _ = 0; _ < TWO_POW(order); _++) {
-				pg_from_freed->type = PageDescriptorType::AVAILABLE; 
-				pg_from_freed++; 
-			}
+		/* Free remainder of coalesced block */
+		/*
+		pgd_alignment = __two_pow(pgd_order); 
+		for (; curr_p < pgd + pgd_alignment; curr_p++) {
+			curr_p->type = PageDescriptorType::AVAILABLE; 
+		}
+		*/
 
-			freed->prev_free = NULL; 
-			if (_free_areas[order] != NULL) _free_areas[order]->prev_free = freed; 
-			freed->next_free = _free_areas[order]; 
-
+		if (pgd_order != order) {
+			// => unable to merge to given order, exists non-available buddy
+			mm_log.messagef(
+				LogLevel::ERROR, 
+				"[buddy::free_pages] Freed up until {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d} "
+				"instead of order %d -- encountered unavailable buddy block.", 
+				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
+				pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
+				pgd_order, order
+			); 
+		} else {
+			// => merged to given order
 			mm_log.messagef(
 				LogLevel::INFO, 
-				"[buddy::free_pages] Freed block {pgd@0x%lx, order: %d}.", 
-				freed, 
-				order
+				"[buddy::free_pages] Freed up block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
+				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
+				pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
+				pgd_order
 			); 
-			dump_state(); 
 		}
+		// dump_state(); 
     }
 
     /**
@@ -504,49 +619,60 @@ public:
      */
     virtual void insert_page_range(PageDescriptor *start, uint64_t count) override
     {
-        // TODO: Implement me!
+		PageDescriptor* bound_base = start; 
+		PageDescriptor* bound_lim = start + count;
 		mm_log.messagef(
 			LogLevel::INFO, 
 			"[buddy::insert_page_range] Clearing [pgd@0x%x (pfn: 0x%x), pgd@0x%x (pfn: 0x%x)).", 
-			start, sys.mm().pgalloc().pgd_to_pfn(start), 
-			start + count, sys.mm().pgalloc().pgd_to_pfn(start + count)
-		);
-		for (size_t _ = 0; _ < count; _++) {
-			start->type = PageDescriptorType::AVAILABLE; 
-			start++;
-		}
-		
-    }
+			bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
+			bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
+		); 
 
-	/*
-	 * Helper function.
-	 * 
-	 * Alters a block of given order to RESERVED status and deletes it from _free_areas[order] LL. 
-	 * This function performs no check for memory safety whatsoever. Use with caution.
-	 */
-	void _unsafe_reserve_block(PageDescriptor* block_base, size_t order) {
-		PageDescriptor* block_lim = block_base + __two_pow(order); 
+		while (bound_base != bound_lim) {
+			assert(bound_base < bound_lim);
+			for (size_t order = MAX_ORDER; order >= 0; order--) {
+				/* Check if bound_base aligned by order */
+				if (!__aligned_by_order(bound_base, _pgds_base, order)) continue; 
 
-		if (block_base->prev_free == NULL) {
-			// => should be _free_areas[order]
-			assert(_free_areas[order] == block_base); 
-			_free_areas[order] = block_base->next_free; 
-			if (block_base->next_free != NULL) block_base->next_free->prev_free = NULL; 
-			block_base->next_free = NULL; 
-		} else {
-			// => otherwise...
-			block_base->prev_free->next_free = block_base->next_free; 
-			if (block_base->next_free != NULL) {
-				block_base->next_free->prev_free = block_base->prev_free; 
+				/* Check if bound_base at this order is in range */
+				PageDescriptor* block_base = bound_base; 
+				PageDescriptor* block_lim = bound_base + __two_pow(order); 
+				if (block_lim > bound_lim) continue; 
+
+				/* Init block of given order */
+				block_base->type = PageDescriptorType::AVAILABLE; 
+				if (_free_areas[order] == NULL) {
+					// => First such order block
+					block_base->prev_free = NULL;
+					block_base->next_free = NULL; 
+				} else {
+					// => Prepend new order block
+					block_base->prev_free = NULL; 
+					block_base->next_free = _free_areas[order]; 
+					_free_areas[order]->prev_free = block_base; 
+				}
+				_free_areas[order] = block_base; 
+
+				bound_base = block_lim; 
+				mm_log.messagef(
+					LogLevel::DEBUG, 
+					"[buddy::insert_page_range] At order %d, retrieved [pgd@0x%lx (%lx), pgd@0x%lx (%lx)). "
+					"%lx pages remaining...", 
+					order, 
+					block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
+					block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim), 
+					bound_lim - bound_base
+				);
+				break; 
+				// if (bound_base == bound_lim) break; 
 			}
-			block_base->prev_free = NULL;
-			block_base->next_free = NULL; 
 		}
-
-		for (; block_base < block_lim; block_base++) {
-			block_base->type = PageDescriptorType::RESERVED; 
-		}
-	}
+		mm_log.message(
+			LogLevel::INFO, 
+			"[buddy::insert_page_range] Finished clearance! Dumping state..."
+		);
+		dump_state(); 
+    }
 
     /**
      * Marks a range of pages as unavailable for allocation.
@@ -555,69 +681,55 @@ public:
      */
     virtual void remove_page_range(PageDescriptor *start, uint64_t count) override
     {
-		assert(((PageDescriptor*)((uintptr_t)0xffffffff83145000))->next_free == NULL); // WTH?!
-
         PageDescriptor* bound_base = start; 
 		PageDescriptor* bound_lim = start + count; 
 		mm_log.messagef(
 			LogLevel::INFO, 
-			"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)).", 
+			"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)). "
+			"Dumping state...", 
 			bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
 			bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
 		); 
+		// dump_state(); 
 
-		find_block_for_bound: 
-		dump_state();
+		/* Subprocedure for reserving all blocks for [bound_base, bound_lim) */
+		find_block_for_bound:  
 		for (size_t order = MAX_ORDER; order >= 0; order--) {
 			PageDescriptor* block_base = _free_areas[order]; 
 
 			while (block_base != NULL) {
 				PageDescriptor* block_lim = block_base + __two_pow(order); 
-				mm_log.messagef(
-					LogLevel::INFO, 
-					"[buddy::remove_page_range] Checking [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)) "
-					"against [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x))", 
-					block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
-					block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim), 
-					bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
-					bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
-				);
 
 				if (block_base == bound_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) aligned by buddy-ness, can fill into single block
-					mm_log.messagef(
-						LogLevel::INFO, 
-						"[buddy::remove_page_range] Block@0x%lx fits.", 
-						block_base
-					); 
 					_unsafe_reserve_block(block_base, order);
+					mm_log.message(
+						LogLevel::INFO, 
+						"[buddy::remove_page_range] Finished reservation! Dumping state..."
+					);
+					dump_state(); 
 					return; 
 
 				} else if (block_base == bound_base && block_lim < bound_lim) {
 					// => [bound_base, bound_lim) left aligned by buddy-ness only, larger
-					//mm_log.messagef(LogLevel::INFO, "[buddy::remove_page_range] Block@0x%lx takes left.", block_base); 
 					_unsafe_reserve_block(block_base, order); 
 					bound_base = block_lim; 
 					goto find_block_for_bound; 
 
 				} else if (bound_base < block_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) right aligned by buddy-ness only, larger
-					//mm_log.messagef(LogLevel::INFO, "[buddy::remove_page_range] Block@0x%lx takes right.", block_base); 
 					_unsafe_reserve_block(block_base, order); 
 					bound_lim = block_base; 
 					goto find_block_for_bound; 
 
 				} else if (block_base <= bound_base && bound_lim <= block_lim) {
 					// => Related block has order too large, continue splitting
-					//mm_log.messagef(LogLevel::INFO, "[buddy::remove_page_range] Block@0x%lx too large.", block_base); 
 					split_block(&block_base, order); // [UNSAFE] mut-immut conflict on _free_areas
-					goto find_block_for_bound; // Therefore sacrifice performance through reentrant code...
+					goto find_block_for_bound;       // Therefore sacrifice performance through reentrant code...
 
 				} else {
 					// => Unrelated block
-					//mm_log.messagef(LogLevel::INFO, "[buddy::remove_page_range] Block@0x%lx unrelated.", block_base); 
 					block_base = block_base->next_free; 
-					// if (block_base == NULL) break; 
 				}
 			}
 		}
@@ -648,63 +760,12 @@ public:
 			return false; 
 		}
 
-		/* 2. Initialize pgd table by largest blocks. */
-		size_t order = MAX_ORDER; 
-		PageDescriptor* curr_block_start = _pgds_base; 
-		PageDescriptor* curr_base = _pgds_base; 
-		size_t curr_len = _pgds_len; 
-		while ((uintptr_t)curr_block_start != _pgds_lim) {
-			/* Suppose we have infinite memory. This is the next block boundary for this order */
-			size_t alignment = sizeof(PageDescriptor) << order; 
-			uintptr_t next_block_start_raw = (uintptr_t)curr_block_start + alignment; 
-
-			if (next_block_start_raw > _pgds_lim) {
-				// => Maybe can still initialize allocation with some reduced order...
-				// At order == 0, next_block_start_raw should just be ptr + 1, which matches. 
-				order--; 
-				curr_len -= (curr_block_start - curr_base) / sizeof(PageDescriptor); 
-				curr_base = curr_block_start; 
-			} else {
-				// => Otherwise initialize block at current order. 
-				curr_block_start->prev_free = 
-					__prev_block_ptr(curr_block_start, curr_base, curr_len, order); 
-				curr_block_start->next_free = 
-					__next_block_ptr(curr_block_start, curr_base, curr_len, order); 
-				assert(
-					curr_block_start->next_free == NULL || 
-					(uintptr_t)curr_block_start->next_free == next_block_start_raw
-				); 
-
-				curr_block_start->type = PageDescriptorType::AVAILABLE; 
-				if (_free_areas[order] == NULL) {
-					_free_areas[order] = curr_block_start; 
-					mm_log.messagef(
-						LogLevel::DEBUG, 
-						"[buddy::init] Initialized _free_area[%d] to pgd@0x%lx", 
-						order, 
-						_free_areas[order]
-					); 
-				}
-				mm_log.messagef(
-					LogLevel::DEBUG, 
-					"[buddy::init] Initialized {pgd@0x%lx (%lx), order: %d, prev@0x%lx (%lx), next@0x%lx (%lx)}.", 
-					curr_block_start, sys.mm().pgalloc().pgd_to_pfn(curr_block_start), 
-					order, 
-					curr_block_start->prev_free, sys.mm().pgalloc().pgd_to_pfn(curr_block_start->prev_free),
-					curr_block_start->next_free, sys.mm().pgalloc().pgd_to_pfn(curr_block_start->next_free)
-				); 
-
-				// [UNSAFE]
-				curr_block_start = (PageDescriptor*)next_block_start_raw; 
-			}
-		}
-
 		mm_log.messagef(
 			LogLevel::INFO, 
-			"[buddy::init] Initialized buddy descriptor with %lx pages. Dumping current state...", 
+			"[buddy::init] Initialized buddy descriptor with %lx pages. Dumping state...", 
 			_pgds_len
 		); 
-		dump_state(); 
+		// dump_state(); 
 		return true; 
 	}
 
