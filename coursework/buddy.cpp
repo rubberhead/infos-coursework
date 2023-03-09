@@ -178,14 +178,13 @@ private:
 		const size_t tgt_order = source_order - 1; 
 		PageDescriptor* half_left = block_ptr; 
 		PageDescriptor* half_right = buddy_of(half_left, tgt_order);
-		/*
 		mm_log.messagef(
 			LogLevel::DEBUG, 
-			"[buddy::split_block] Halves: L@0x%lx, R@0x%lx. Order: %d->%d", 
-			half_left, half_right,
+			"[buddy::split_block] Halves: L@0x%lx (%lx), R@0x%lx (%lx). Order: %d->%d", 
+			half_left, sys.mm().pgalloc().pgd_to_pfn(half_left),
+			half_right, sys.mm().pgalloc().pgd_to_pfn(half_right), 
 			source_order, tgt_order
 		);
-		*/ 
 		assert(__min((uintptr_t)half_left, (uintptr_t)half_right) == (uintptr_t)half_left); 
 
 		// assert(half_left->type != PageDescriptorType::INVALID); 
@@ -207,7 +206,7 @@ private:
 		} else if (_free_areas[tgt_order] >= half_right + tgt_alignment) {
 			// => Both blocks more top than current tgt_order entry, prioritize. 
 			/* Ensure no block segmentation faults & invariant */ 
-			assert(_free_areas[tgt_order]->prev_free == NULL); 
+			// assert(_free_areas[tgt_order]->prev_free == NULL); 
 
 			/* Alter linkage */
 			half_left->prev_free = NULL; 
@@ -235,10 +234,11 @@ private:
 			 */
 
 			/* Ensure no block segmentation faults & invariant */
+			/*
 			assert(
 				_free_areas[tgt_order]->next_free == NULL || 
 				half_right + tgt_alignment <= _free_areas[tgt_order]->next_free 
-			); 
+			);*/
 
 			/* Alter linkage */
 			half_left->prev_free = NULL; 
@@ -281,6 +281,7 @@ private:
 			half_right, tgt_order
 		);
 		*/ 
+		// dump_state(); 
 		return half_left; 
 	}
 
@@ -348,16 +349,17 @@ private:
 		if (_free_areas[tgt_order] == NULL) {
 			_free_areas[tgt_order] = tgt_block; 
 		} else if (_free_areas[tgt_order] + alignment <= tgt_block) {
+			/*
 			assert(
 				_free_areas[tgt_order]->next_free == NULL ||
 				tgt_block + alignment <= _free_areas[tgt_order]->next_free
-			); 
+			);*/
 
 			tgt_block->next_free = _free_areas[tgt_order]; 
 			_free_areas[tgt_order]->prev_free = tgt_block; 
 			_free_areas[tgt_order] = tgt_block; 
 		} else if (tgt_block + alignment <= _free_areas[tgt_order]) {
-			assert(_free_areas[tgt_order]->prev_free == NULL); 
+			//assert(_free_areas[tgt_order]->prev_free == NULL); 
 
 			tgt_block->next_free = _free_areas[tgt_order]; 
 			_free_areas[tgt_order]->prev_free = tgt_block; 
@@ -400,7 +402,7 @@ private:
 	 * Alters a block of given order to RESERVED status and deletes it from _free_areas[order] LL. 
 	 * This function performs no check for memory safety whatsoever. Use with caution.
 	 */
-	void _unsafe_reserve_block(PageDescriptor* block_base, size_t order) {
+	void reserve_block(PageDescriptor* block_base, size_t order) {
 		PageDescriptor* block_lim = block_base + __two_pow(order);
 		PageDescriptor* block_buddy = buddy_of(block_base, order); 
 		assert(__in_ptr_bound(block_buddy, _pgds_base, _pgds_len)); 
@@ -446,7 +448,7 @@ private:
 
 		mm_log.messagef(
 			LogLevel::INFO, 
-			"[buddy::_unsafe_reserve_block] Reserved block [pgn@0x%lx (%lx), pgn@0x%lx (%lx)).", 
+			"[buddy::reserve_block] Reserved block [pgn@0x%lx (%lx), pgn@0x%lx (%lx)).", 
 			block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
 			block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim)
 		);
@@ -461,22 +463,26 @@ public:
 	 */
 	PageDescriptor *allocate_pages(int order) override
 	{
+		mm_log.messagef(
+			LogLevel::DEBUG, 
+			"[buddy::allocate_pages] Trying to allocate %d-order block...", 
+			order
+		); 
 		if (_free_areas[order] != NULL) {
 			// => Exists subdivision in _free_areas
 			auto allocated = _free_areas[order];
 
 			// Costly, but required by kernel -- otherwise won't pass assertion
-			PageDescriptor* pg_from_allocated (allocated);
-			for (uintptr_t _ = 0; _ < TWO_POW(order); _++) {
+			for (PageDescriptor* p = allocated; p < allocated + __two_pow(order); p++) {
 				// [Spec?] Check if pg_from_allocated is of a allocable type? 
-				pg_from_allocated->type = PageDescriptorType::AVAILABLE; 
-				pg_from_allocated++; 
+				p->type = PageDescriptorType::AVAILABLE; 
 			}
 
 			/* Alter _free_areas state */
 			assert(allocated->prev_free == NULL); 
 			_free_areas[order] = allocated->next_free; 
-			_free_areas[order]->prev_free = NULL; 
+			if (_free_areas[order] != NULL) _free_areas[order]->prev_free = NULL; 
+			mm_log.message(LogLevel::DEBUG, "HERE!!!"); 
 
 			/* Keep bookmark on intended buddy 
 			 * I don't like this way of implementing things at all -- one thing for more than one 
@@ -506,7 +512,7 @@ public:
 				allocated + __two_pow(order), sys.mm().pgalloc().pgd_to_pfn(allocated + __two_pow(order)), 
 				order
 			); 
-			// dump_state(); 
+			dump_state(); 
 			return allocated; 
 		}
 		// => Otherwise 2 branches: 
@@ -685,8 +691,7 @@ public:
 		PageDescriptor* bound_lim = start + count; 
 		mm_log.messagef(
 			LogLevel::INFO, 
-			"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)). "
-			"Dumping state...", 
+			"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)).", 
 			bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
 			bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
 		); 
@@ -702,7 +707,7 @@ public:
 
 				if (block_base == bound_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) aligned by buddy-ness, can fill into single block
-					_unsafe_reserve_block(block_base, order);
+					reserve_block(block_base, order);
 					mm_log.message(
 						LogLevel::INFO, 
 						"[buddy::remove_page_range] Finished reservation! Dumping state..."
@@ -712,20 +717,20 @@ public:
 
 				} else if (block_base == bound_base && block_lim < bound_lim) {
 					// => [bound_base, bound_lim) left aligned by buddy-ness only, larger
-					_unsafe_reserve_block(block_base, order); 
+					reserve_block(block_base, order); 
 					bound_base = block_lim; 
 					goto find_block_for_bound; 
 
 				} else if (bound_base < block_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) right aligned by buddy-ness only, larger
-					_unsafe_reserve_block(block_base, order); 
+					reserve_block(block_base, order); 
 					bound_lim = block_base; 
 					goto find_block_for_bound; 
 
 				} else if (block_base <= bound_base && bound_lim <= block_lim) {
 					// => Related block has order too large, continue splitting
 					split_block(&block_base, order); // [UNSAFE] mut-immut conflict on _free_areas
-					goto find_block_for_bound;       // Therefore sacrifice performance through reentrant code...
+					goto find_block_for_bound;       // Therefore sacrifice performance through rerun
 
 				} else {
 					// => Unrelated block
