@@ -1,6 +1,8 @@
 /*
  * The Buddy Page Allocator
  * SKELETON IMPLEMENTATION TO BE FILLED IN FOR TASK 2
+ * 
+ * B171926
  */
 
 #include <infos/mm/page-allocator.h>
@@ -512,7 +514,7 @@ public:
 				allocated + __two_pow(order), sys.mm().pgalloc().pgd_to_pfn(allocated + __two_pow(order)), 
 				order
 			); 
-			dump_state(); 
+			// dump_state(); 
 			return allocated; 
 		}
 		// => Otherwise 2 branches: 
@@ -563,13 +565,9 @@ public:
 		size_t pgd_order = __log2ceil(pgd_alignment); 
 
 		/* Free this block */
+		// or... at least to pass merge_block assertions
 		pgd->type = PageDescriptorType::AVAILABLE; 
-		/*
-		PageDescriptor* curr_p = pgd + 1; 
-		for (; curr_p < pgd + pgd_alignment; curr_p++) {
-			curr_p->type = PageDescriptorType::AVAILABLE; 
-		}
-		*/
+
 		if (_free_areas[pgd_order] == NULL) {
 			pgd->prev_free = NULL; 
 			pgd->next_free = NULL; 
@@ -586,14 +584,6 @@ public:
 			if (merge_block(&pgd, pgd_order) == NULL) break; 
 			// merge_block maintains _free_areas by itself, so no worries
 		}
-
-		/* Free remainder of coalesced block */
-		/*
-		pgd_alignment = __two_pow(pgd_order); 
-		for (; curr_p < pgd + pgd_alignment; curr_p++) {
-			curr_p->type = PageDescriptorType::AVAILABLE; 
-		}
-		*/
 
 		if (pgd_order != order) {
 			// => unable to merge to given order, exists non-available buddy
@@ -615,7 +605,6 @@ public:
 				pgd_order
 			); 
 		}
-		// dump_state(); 
     }
 
     /**
@@ -738,8 +727,6 @@ public:
 				}
 			}
 		}
-
-		unreachable: 
 		__unreachable();
     }
 
