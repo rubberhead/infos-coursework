@@ -484,7 +484,6 @@ public:
 			assert(allocated->prev_free == NULL); 
 			_free_areas[order] = allocated->next_free; 
 			if (_free_areas[order] != NULL) _free_areas[order]->prev_free = NULL; 
-			mm_log.message(LogLevel::DEBUG, "HERE!!!"); 
 
 			/* Keep bookmark on intended buddy 
 			 * I don't like this way of implementing things at all -- one thing for more than one 

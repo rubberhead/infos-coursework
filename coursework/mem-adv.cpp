@@ -5,7 +5,7 @@
  *  - upper half of memory uses fibonacci buddy allocator
  * FOR TASK 2 ADV.
  * 
- * B171926
+ * B171926 -- Unfinished
  */
 
 #include <infos/mm/page-allocator.h>
@@ -22,12 +22,21 @@ using namespace infos::util;
 #define BUDDY_MAX_ORDER 18
 #define TWO_POW(order) 1ull << order
 
+/* [RANT]
+ * `#pragma region` is a godsend -- scrolling over 1,000 lines of code gives me a wicked bad 
+ * migraine because apparently for whatever reason we cannot introduce header files (was it 
+ * because how makefile was written?!) we defined on our own. 
+ */
+
+/** 
+ * Helper functions defined for buddy subset, mostly arithmetic-related.
+ */
 namespace buddy_helper {
     /**
      * Preprocessor defines doesn't bide well with static analysis for pointer arithmetics. 
      * This is a wrapper for TWO_POW.
      */
-    inline constexpr uint64_t __two_pow(uint32_t order) {
+    inline constexpr uint64_t two_pow(uint32_t order) {
         return TWO_POW(order); 
     }
 
@@ -35,7 +44,7 @@ namespace buddy_helper {
      * Checks if `elem_ptr` is in an contiguous "array" -- delineated by `base_ptr` and `len`. 
      */
     template<typename T>
-    inline const bool __in_ptr_bound(
+    inline const bool in_ptr_bound(
         const T* elem_ptr, 
         const T* base_ptr, 
         const uint64_t len
@@ -48,7 +57,7 @@ namespace buddy_helper {
      * i.e., whether `block_ptr - base_ptr` is a multiple of 2^order.
      */
     template<typename T>
-    inline bool __aligned_by_order(
+    inline bool aligned_by_order(
         T* const block_ptr, 
         T* const base_ptr, 
         const uint64_t order
@@ -64,16 +73,16 @@ namespace buddy_helper {
      * @returns block_ptr - alignment, or NULL if out of bounds
      */
     template<typename T>
-    inline T* __prev_block_ptr(
+    inline T* prev_block_ptr(
         T* const block_ptr, 
         T* const base_ptr, 
         const uint64_t len, 
         const uint64_t order
     ) {
-        assert(__aligned_by_order(block_ptr, base_ptr, order));  
+        assert(aligned_by_order(block_ptr, base_ptr, order));  
         const size_t alignment = TWO_POW(order); 
         T* result_ptr = block_ptr - alignment; 
-        if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
+        if (!in_ptr_bound(result_ptr, base_ptr, len)) {
             return NULL; 
         } else {
             return result_ptr; 
@@ -86,16 +95,16 @@ namespace buddy_helper {
      * @returns block_ptr + alignment, or NULL if out of bounds
      */
     template<typename T>
-    inline T* __next_block_ptr(
+    inline T* next_block_ptr(
         T* const block_ptr, 
         T* const base_ptr, 
         const uint64_t len, 
         const uint64_t order
     ) {
-        assert(__aligned_by_order(block_ptr, base_ptr, order)); 
+        assert(aligned_by_order(block_ptr, base_ptr, order)); 
         const size_t alignment = TWO_POW(order); 
         T* result_ptr = block_ptr + alignment; 
-        if (!__in_ptr_bound(result_ptr, base_ptr, len)) {
+        if (!in_ptr_bound(result_ptr, base_ptr, len)) {
             return NULL; 
         } else {
             return result_ptr; 
@@ -103,7 +112,15 @@ namespace buddy_helper {
     }
 }; 
 
+/**
+ * Helper functions defined for fibonacci subset, mostly arithmetic-related. 
+ */
 namespace fib_helper {
+	struct PgdPtrPair {
+		PageDescriptor* left; 
+		PageDescriptor* right; 
+	}; 
+
     /**  
      * Knuth's matrix method for converting index to _fib_free_areas dynamic allocation 
      * to their corresponding fibonacci number (i.e., block size) in O(lg(idx)) time. 
@@ -116,7 +133,7 @@ namespace fib_helper {
      * 
      * ISTG this coursework is eating into my time for SDP & stuff so much -_-
      */
-    inline uint32_t __idx_to_fib(size_t idx) {
+    inline uint32_t idx_to_fib(size_t idx) {
         uint32_t f_mat[4] = {
             1, 1, 
             1, 0
@@ -142,21 +159,21 @@ namespace fib_helper {
         } else {
             // => Destructure pow-of-two component of idx
             size_t pow_of_two_component = 1 << ilog2_floor(idx); 
-            return __idx_to_fib(pow_of_two_component) * __idx_to_fib(idx - pow_of_two_component); 
+            return idx_to_fib(pow_of_two_component) * idx_to_fib(idx - pow_of_two_component); 
         }
     }
 
     /** 
-     * Inverse of __idx_to_fib; converts a given fibonacci number to its index form in fibonacci 
+     * Inverse of idx_to_fib; converts a given fibonacci number to its index form in fibonacci 
      * sequence through binary search. 
      */
-    inline size_t __fib_to_idx(uint32_t fib_x) {
+    inline size_t fib_to_idx(uint32_t fib_x) {
         size_t idx = 1; 
         size_t shift_at = 0; 
         size_t shift_lim = sizeof(size_t); 
 
         while (true) {
-            auto curr_fib = __fib_to_idx(idx); 
+            auto curr_fib = fib_to_idx(idx); 
             if (curr_fib == fib_x) {
                 return idx - 1; 
             } else if (curr_fib < fib_x) {
@@ -175,28 +192,49 @@ namespace fib_helper {
 
     /** 
      * Finds the first fibonacci number >= 2^order.
-     * 
-     * Lazy implementation. A better implementation could be to do fixed-point arithmetics, but ah 
-     * well... 
      */
-    inline uint32_t __order_to_fib_ceil(size_t order) {
+    inline uint32_t order_to_fib_ceil(size_t order) {
         size_t pg_count = TWO_POW(order); 
-        return __count_to_fib_ceil(pg_count); 
+        return count_to_fib_ceil(pg_count); 
     }
 
-
-    inline uint32_t __count_to_fib_ceil(size_t pg_count) {
+	/**
+	 * Finds the first fibonacci number >= pg_count.
+	 * 
+	 * Lazy implementation. A better implementation could be to do fixed-point arithmetics, but ah 
+     * well... 
+	 */
+    inline uint32_t count_to_fib_ceil(size_t pg_count) {
         assert(pg_count < __UINT32_MAX__); 
         size_t curr_idx = 0; 
-        uint32_t curr_fib = __idx_to_fib(0); 
+        uint32_t curr_fib = idx_to_fib(0); 
         while (curr_fib < pg_count) {
             // Since fibonacci numbers grow exponentially, 
             // This loop take log(pg_count) time. 
             curr_idx++; 
-            curr_fib = __idx_to_fib(curr_idx); 
+            curr_fib = idx_to_fib(curr_idx); 
         }
         return curr_fib; 
     }
+
+	/**
+	 * Finds the last fibonacci number <= pg_count. 
+	 * 
+	 * Lazy implementation. A better implementation could be to do fixed-point arithmetics, but ah 
+	 * well...
+	 */
+	inline uint32_t count_to_fib_floor(size_t pg_count) {
+		assert(pg_count < __UINT32_MAX__); 
+		size_t curr_idx = 1;
+		uint32_t last_fib = idx_to_fib(0); 
+		uint32_t curr_fib = idx_to_fib(1); 
+		while (curr_fib <= pg_count) {
+			curr_idx++;
+			last_fib = curr_fib;  
+			curr_fib = idx_to_fib(curr_idx); 
+		}
+		return last_fib; 
+	}
 }; 
 
 /**
@@ -217,65 +255,37 @@ private:
 	uint64_t _pgds_len; 
 
     /* 
-     * Length of the page descriptor table for each half of the page descriptor table. 
-     */
-    uint64_t _pgds_half_len = _pgds_len / 2; 
-
-    /* 
      * Limit pointer for the page descriptor table. Points to hypothetical (last + 1) element. 
      * 
      * [DANGER] NEVER dereference -- out of bounds. 
      */
     uintptr_t _pgds_lim; 
 
+#pragma region buddy_subset
+	/* 
+	 * Base pointer for the page descriptor table visible to buddy subset
+	 */
+	PageDescriptor* _buddy_pgds_base = _pgds_base; 
+
     /* 
-     * Limit pointer for the midpoint of the page descriptor table (if there exists enough space to 
-     * allocate _fib_free_areas[])
+     * Length of the page descriptor table for the buddy subset of this allocator. 
+     */
+    uint64_t _buddy_pgds_len = _pgds_len / 2; 
+
+	/* 
+     * Limit pointer for the buddy subset of this allocator. 
      * 
      * [DANGER] NEVER dereference -- out of bounds. 
      */
-    uintptr_t _pgds_alloc_lim = (uintptr_t)_pgds_base + (_pgds_lim - (uintptr_t)_pgds_base) / 2; 
+    uintptr_t _buddy_pgds_lim = (uintptr_t)_pgds_base + (_pgds_lim - (uintptr_t)_pgds_base) / 2; 
 
-    /* 
+	/* 
      * Array of page descriptor pointers for caching the beginning of first pgd for contiguous 
      * 2^order page cluster allocations. 
      * 
      * Used by the binary buddy allocator. 
      */
     PageDescriptor *_buddy_free_areas[BUDDY_MAX_ORDER + 1] { NULL }; 
-
-    /* 
-     * Allocated memory for caching the beginning of first pgd for contiguous fibonacci block 
-     * allocations. 
-     * 
-     * Used by the fibonacci buddy allocator. 
-     */
-    PageDescriptor* _fib_free_areas_base = NULL; 
-
-    /* 
-     * Limit pointer for the contiguous fibonacci block allocation cache. 
-     */
-    uintptr_t _fib_free_areas_lim = 0; 
-
-    /* 
-     * Array for indexing into the contiguous array of fibonacci blocks. 
-     */
-    PageDescriptor** _fib_free_areas = &_fib_free_areas_base; 
-
-    /* 
-     * Length of contiguous memory allocated for _fib_free_areas in number of elements. 
-     */
-    size_t _fib_free_areas_len; 
-
-    /* 
-     * Minimum number of pages needed for _fib_free_areas to be allocated.
-     */
-    size_t _fib_free_areas_pgcount; 
-
-    /* 
-     * Maximum size of block allocable under fibonacci allocator. 
-     */
-    size_t _fib_max_block_size; 
 
     /** 
      * Given a page descriptor, and an order, returns the buddy PGD.  The buddy could either be
@@ -296,13 +306,12 @@ private:
 		const size_t pfn_of_pgd = sys.mm().pgalloc().pgd_to_pfn(pgd); 
 		if ((pfn_of_pgd >> order) % 2) {
 			// => odd "block idx", return previous block
-			return buddy_helper::__prev_block_ptr(pgd, _pgds_base, _pgds_len, order); 
+			return buddy_helper::prev_block_ptr(pgd, _buddy_pgds_base, _buddy_pgds_len, order); 
 		} else {
 			// => even "block idx", return next block
-			return buddy_helper::__next_block_ptr(pgd, _pgds_base, _pgds_len, order); 
+			return buddy_helper::next_block_ptr(pgd, _buddy_pgds_base, _buddy_pgds_len, order); 
 		}
 	}
-
 
     /**
 	 * Helper function.
@@ -316,9 +325,9 @@ private:
 	void buddy_reserve_block(PageDescriptor* block_base, size_t order) {
         const char* const _FN_IDENT = "[chimera(buddy)::reserve_block]"; 
 
-		PageDescriptor* block_lim = block_base + buddy_helper::__two_pow(order);
+		PageDescriptor* block_lim = block_base + buddy_helper::two_pow(order);
 		PageDescriptor* block_buddy = buddy_of(block_base, order); 
-		assert(buddy_helper::__in_ptr_bound(block_buddy, _pgds_base, _pgds_len)); 
+		assert(buddy_helper::in_ptr_bound(block_buddy, _buddy_pgds_base, _buddy_pgds_len)); 
 		assert(block_buddy != block_base); 
 
 		if (_buddy_free_areas[order] == block_base) {
@@ -617,7 +626,7 @@ private:
 			auto allocated = _buddy_free_areas[order];
 
 			// Costly, but required by kernel -- otherwise won't pass assertion
-			for (PageDescriptor* p = allocated; p < allocated + buddy_helper::__two_pow(order); p++) {
+			for (PageDescriptor* p = allocated; p < allocated + buddy_helper::two_pow(order); p++) {
 				// [Spec?] Check if pg_from_allocated is of a allocable type? 
 				p->type = PageDescriptorType::AVAILABLE; 
 			}
@@ -636,7 +645,7 @@ private:
 			 * order, but for potrability's sake this is used as a bandaid solution. 
 			 */
 			auto allocated_buddy = buddy_of(allocated, order); 
-			assert(buddy_helper::__in_ptr_bound(allocated_buddy, _pgds_base, _pgds_len)); 
+			assert(buddy_helper::in_ptr_bound(allocated_buddy, _buddy_pgds_base, _buddy_pgds_len)); 
 			assert(allocated_buddy != allocated); 
 			if (allocated_buddy < allocated) {
 				allocated->prev_free = allocated_buddy; 
@@ -653,8 +662,8 @@ private:
 				"%s Allocated block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
                 _FN_IDENT, 
 				allocated, sys.mm().pgalloc().pgd_to_pfn(allocated), 
-				allocated + buddy_helper::__two_pow(order), 
-                sys.mm().pgalloc().pgd_to_pfn(allocated + buddy_helper::__two_pow(order)), 
+				allocated + buddy_helper::two_pow(order), 
+                sys.mm().pgalloc().pgd_to_pfn(allocated + buddy_helper::two_pow(order)), 
 				order
 			); 
 			return allocated; 
@@ -685,9 +694,9 @@ private:
             _FN_IDENT, 
 			_buddy_free_areas[from_order], 
 			sys.mm().pgalloc().pgd_to_pfn(_buddy_free_areas[from_order]), 
-			_buddy_free_areas[from_order] + buddy_helper::__two_pow(from_order), 
+			_buddy_free_areas[from_order] + buddy_helper::two_pow(from_order), 
 			sys.mm().pgalloc().pgd_to_pfn(
-                _buddy_free_areas[from_order] + buddy_helper::__two_pow(from_order)
+                _buddy_free_areas[from_order] + buddy_helper::two_pow(from_order)
             ), 
 			from_order
 		); 
@@ -746,8 +755,8 @@ private:
 				"instead of order %d -- encountered unavailable buddy block.", 
                 _FN_IDENT, 
 				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
-				pgd + buddy_helper::__two_pow(pgd_order), 
-                sys.mm().pgalloc().pgd_to_pfn(pgd + buddy_helper::__two_pow(pgd_order)), 
+				pgd + buddy_helper::two_pow(pgd_order), 
+                sys.mm().pgalloc().pgd_to_pfn(pgd + buddy_helper::two_pow(pgd_order)), 
 				pgd_order, order
 			); 
             return false; 
@@ -758,8 +767,8 @@ private:
 				"%s Freed up block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
                 _FN_IDENT, 
 				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
-				pgd + buddy_helper::__two_pow(pgd_order), 
-                sys.mm().pgalloc().pgd_to_pfn(pgd + buddy_helper::__two_pow(pgd_order)), 
+				pgd + buddy_helper::two_pow(pgd_order), 
+                sys.mm().pgalloc().pgd_to_pfn(pgd + buddy_helper::two_pow(pgd_order)), 
 				pgd_order
 			); 
             return true; 
@@ -794,11 +803,11 @@ private:
 			assert(bound_base < bound_lim);
 			for (size_t order = BUDDY_MAX_ORDER; order >= 0; order--) {
 				/* Check if bound_base aligned by order */
-				if (!buddy_helper::__aligned_by_order(bound_base, _pgds_base, order)) continue; 
+				if (!buddy_helper::aligned_by_order(bound_base, _buddy_pgds_base, order)) continue; 
 
 				/* Check if bound_base at this order is in range */
 				PageDescriptor* block_base = bound_base; 
-				PageDescriptor* block_lim = bound_base + buddy_helper::__two_pow(order); 
+				PageDescriptor* block_lim = bound_base + buddy_helper::two_pow(order); 
 				if (block_lim > bound_lim) continue; 
 
 				/* Init block of given order */
@@ -862,7 +871,7 @@ private:
 			PageDescriptor* block_base = _buddy_free_areas[order]; 
 
 			while (block_base != NULL) {
-				PageDescriptor* block_lim = block_base + buddy_helper::__two_pow(order); 
+				PageDescriptor* block_lim = block_base + buddy_helper::two_pow(order); 
 
 				if (block_base == bound_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) aligned by buddy-ness, can fill into single block
@@ -900,6 +909,55 @@ private:
 		}
 		__unreachable();
     } 
+#pragma endregion buddy_subset
+	
+#pragma region fib_subset
+	/* 
+	 * Base pointer for the page descriptor table for the fib subset. 
+	 */
+	PageDescriptor* _fib_pgds_base = _pgds_base + _buddy_pgds_len; 
+
+	/* 
+	 * Limit pointer for the page descriptor table for the fib subset. 
+	 */
+	uintptr_t _fib_pgds_lim = _pgds_lim; 
+
+    /* 
+     * Allocated memory for caching the beginning of first pgd for contiguous fibonacci block 
+     * allocations. 
+     * 
+     * Used by the fibonacci buddy allocator. 
+     */
+    PageDescriptor* _fib_free_areas_base = NULL; 
+
+    /* 
+     * Limit pointer for the contiguous fibonacci block allocation cache. 
+     */
+    uintptr_t _fib_free_areas_lim = 0; 
+
+    /* 
+     * Array for indexing into the contiguous array of fibonacci blocks. 
+     */
+    PageDescriptor** const _fib_free_areas = &_fib_free_areas_base; 
+
+    /* 
+     * Length of contiguous memory allocated for _fib_free_areas in number of elements. 
+     */
+    size_t _fib_free_areas_len; 
+
+    /* 
+     * Maximum number of pages needed for _fib_free_areas to be allocated.
+	 *
+	 * Determined at init time since I don't wanna do dynamic allocation more than once... 
+	 * So long as index never exceeds _fib_max_block_size (which is determined dynamically at 
+	 * insert time) fib subset should work fine. 
+     */
+    size_t _fib_free_areas_pgcount; 
+
+    /*
+     * Maximum size of block allocable under fibonacci allocator. 
+     */
+    size_t _fib_max_block_size; 
 
     /** 
      * Marks a range of pages as available for allocation. 
@@ -908,9 +966,9 @@ private:
      * This function assumes page range to be inserted are all within the subset managed by 
      * fibonacci allocator. 
     */
-    void insert_fib_page_range(PageDescriptor* start, uint64_t count) {
-        const char* const _FN_IDENT = "[chimera(fib)::insert_fib_page_range]"; 
-
+    void fib_insert_page_range(PageDescriptor* start, uint64_t count) {
+        const char* const _FN_IDENT = "[chimera(fib)::fib_insert_page_range]"; 
+	
         assert(_fib_free_areas != NULL); 
 
         PageDescriptor* bound_base = start; 
@@ -926,12 +984,12 @@ private:
         while (bound_base != bound_lim) {
             assert(bound_base < bound_lim); 
             PageDescriptor* block_base = bound_base; 
-            size_t block_count = __min(fib_helper::__count_to_fib_ceil(count), _fib_max_block_size); 
+            size_t block_count = __min(fib_helper::count_to_fib_ceil(count), _fib_max_block_size); 
             PageDescriptor* block_lim = block_base + block_count; 
 
             /* Init block of given order */
             block_base->type = PageDescriptorType::AVAILABLE; 
-            size_t idx_of_block_size = fib_helper::__fib_to_idx(block_count); 
+            size_t idx_of_block_size = fib_helper::fib_to_idx(block_count); 
             if (_fib_free_areas[idx_of_block_size] == NULL) {
                 // => First such fib-sized block
                 block_base->prev_free = NULL; 
@@ -967,7 +1025,127 @@ private:
 
     /* Assume fibonacci allocator will not be responsible for block removal */
 
+	fib_helper::PgdPtrPair fib_split_block(PageDescriptor* block_ptr, size_t fib_idx) {
+		assert(fib_idx >= 1); 
+		assert(block_ptr->type == PageDescriptorType::AVAILABLE); 
+		assert(block_ptr->next_free != NULL); 
+		
+		/* Maintain pgd & _fib_free_areas state */
+		if (_fib_free_areas[fib_idx] == block_ptr) {
+			_fib_free_areas[fib_idx] = block_ptr->next_free; 
+		}
+		if (block_ptr->prev_free != NULL) {
+			block_ptr->prev_free->next_free = block_ptr->next_free; 
+		}
+		if (block_ptr->next_free != NULL) {
+			block_ptr->next_free->prev_free = block_ptr->prev_free; 
+		}
+		block_ptr->prev_free = NULL; 
+		block_ptr->next_free = NULL; 
+
+		/* Split in lower orders, update new state */
+		const size_t   fib_idx_prev_lo = (fib_idx - 2 > fib_idx) ? 0 : fib_idx - 2; 
+		const size_t   fib_idx_prev_hi = (fib_idx - 1 > fib_idx) ? 0 : fib_idx - 1; 
+		const uint32_t fib_prev_lo     = fib_helper::idx_to_fib(fib_idx_prev_lo); 
+		const uint32_t fib_prev_hi     = fib_helper::idx_to_fib(fib_idx_prev_hi); 
+		// By default, left is prev_lo block, right is prev_hi block. 
+		PageDescriptor* fib_lo = block_ptr; 
+		PageDescriptor* fib_hi = block_ptr + fib_prev_lo; 
+		// Ensure segmentation
+		assert(fib_hi + fib_prev_hi == block_ptr + fib_helper::idx_to_fib(fib_idx)); 
+
+		if (_fib_free_areas[fib_idx_prev_lo] == NULL) {
+			// First such sized block
+			fib_lo->prev_free = NULL; 
+			fib_lo->next_free = NULL; 
+		} else {
+			// Won't check for segmentation anymore...
+			fib_lo->prev_free = NULL; 
+			fib_lo->next_free = _fib_free_areas[fib_idx_prev_lo]; 
+			_fib_free_areas[fib_idx_prev_lo]->prev_free = fib_lo; 
+		}
+		_fib_free_areas[fib_idx_prev_lo] = fib_lo; 
+
+		if (_fib_free_areas[fib_idx_prev_hi] == NULL) {
+			// First such sized block
+			fib_hi->prev_free = NULL; 
+			fib_hi->next_free = NULL; 
+		} else {
+			// Won't check for segmentation anymore...
+			fib_hi->prev_free = NULL; 
+			fib_hi->next_free = _fib_free_areas[fib_idx_prev_hi]; 
+			_fib_free_areas[fib_idx_prev_hi]->prev_free = fib_hi; 
+		}
+		_fib_free_areas[fib_idx_prev_hi] = fib_hi; 
+
+		return (fib_helper::PgdPtrPair){fib_lo, fib_hi}; 
+	}
+
+	PageDescriptor* fib_allocate_pages(int order) {
+		const char* const _FN_IDENT = "[chimera(fib)::fib_allocate_pages]"; 
+
+		const size_t pg_count = fib_helper::order_to_fib_ceil(order);
+		if (pg_count > _fib_max_block_size) {
+			// => Requested block size larger than fib_floor()
+			return NULL; 
+		}
+
+		const size_t fib_idx  = fib_helper::fib_to_idx(pg_count);  
+		find_block: 
+		for (size_t i = fib_idx; i <= _fib_max_block_size; i++) {
+			if (i == fib_idx && _fib_free_areas[fib_idx] != NULL) {
+				// => Exists exact subdivision in _fib_free_areas
+				auto allocated = _fib_free_areas[fib_idx]; 
+
+				// Required by kernel
+				for (PageDescriptor* p = allocated; p < allocated + pg_count; p++) {
+					p->type = PageDescriptorType::AVAILABLE; 
+				}
+
+				/* Alter _free_areas state */
+				assert(allocated->prev_free == NULL); 
+				_fib_free_areas[fib_idx] = allocated->next_free; 
+				if (_fib_free_areas[fib_idx] != NULL) _fib_free_areas[pg_count]->prev_free = NULL; 
+
+				/* Keep bookmark of its size--fib, using next_free as limit ptr */ 
+				allocated->next_free = allocated + pg_count; 
+				
+				mm_log.messagef(
+					LogLevel::INFO, 
+					"%s Allocated block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), fib: %d}.", 
+					_FN_IDENT, 
+					allocated, sys.mm().pgalloc().pgd_to_pfn(allocated), 
+					allocated->next_free, sys.mm().pgalloc().pgd_to_pfn(allocated->next_free), 
+					pg_count
+				); 
+				return allocated; 
+			} else if (i != fib_idx && _fib_free_areas[fib_idx] != NULL) {
+				// => Exists larger subdivision in _fib_free_areas
+				fib_split_block(_fib_free_areas[fib_idx], fib_idx);
+				goto find_block; 
+			}
+			// Otherwise continue. 
+		}
+
+		// => Cannot allocate given order
+		mm_log.messagef(
+			LogLevel::ERROR, 
+			"%s Cannot allocate contiguous block of size %d.", 
+			_FN_IDENT, 
+			pg_count
+		); 
+		return NULL; 
+	}
+
+	// [TODO] free_pages
+
+#pragma endregion buddy_subset
+
 public: 
+#pragma region api_impl
+	// [TODO] lots... 
+	// [FIXME] _fib_max_block_size wrt. _fib_free_areas_len alteration
+
     /**
 	 * Returns the friendly name of the allocation algorithm, for debugging and selection purposes.
 	 */
@@ -1027,7 +1205,7 @@ public:
         // Knowing that kernel only removes once, 
         // Assume that kernel only marks lower memory as unavailable 
         // (which is the case for current InfOS, apparently)
-        assert((uintptr_t)(start + count) < _pgds_half_len); 
+        assert((uintptr_t)(start + count) < _buddy_pgds_lim); 
         remove_buddy_page_range(start, count); 
     }
 
@@ -1039,16 +1217,16 @@ public:
     virtual void insert_page_range(PageDescriptor *start, uint64_t count) override {
         const char* const _FN_IDENT = "[chimera::insert_page_range]"; 
 
-        if ((uintptr_t)(start + count) < _pgds_half_len) {
+        if ((uintptr_t)(start + count) < _buddy_pgds_lim) {
             // => [start, start + count) fully in lower memory
             insert_buddy_page_range(start, count); 
 
             /* Try allocate, which may fail to NULL */
             if (_fib_free_areas == NULL) {
-                _fib_free_areas_base = buddy_allocate_pages(__log2ceil(_fib_free_areas_len)); 
+                _fib_free_areas_base = buddy_allocate_pages(__log2ceil(_fib_free_areas_pgcount)); 
             }
             
-        } else if ((uintptr_t)start >= _pgds_half_len) {
+        } else if ((uintptr_t)start >= _buddy_pgds_lim) {
             // => [start, start + count) fully in upper memory
             /* 
              * Steal a part of upper memory into lower memory to initialize fibonacci allocator, 
@@ -1058,7 +1236,8 @@ public:
             if (_fib_free_areas == NULL) {
                 PageDescriptor* steal_start = start; 
                 insert_buddy_page_range(steal_start, steal_count); 
-                _pgds_half_len += steal_count; 
+                _buddy_pgds_len += steal_count; 
+				_buddy_pgds_lim = sizeof(PageDescriptor*) * _buddy_pgds_len; 
 
                 _fib_free_areas_base = buddy_allocate_pages(__log2ceil(_fib_free_areas_pgcount)); 
             }
@@ -1067,16 +1246,16 @@ public:
                 // => Stolen upper memory sufficient for allocating _fib_free_areas
                 start += steal_count; 
                 count -= steal_count; 
-                insert_fib_page_range(start, count); 
+                fib_insert_page_range(start, count); 
             }
             // => Otherwise __min(_fib_free_areas_len, count) == count, 
             //    hence all are cleared to buddy. 
 
         } else {
             // => Split [start, start + count) into 
-            //    lower: [start, _pgds_half_len), 
-            //    upper: [_pgds_half_len, start + count)
-            PageDescriptor* half = start + _pgds_half_len; 
+            //    lower: [start, _buddy_pgds_len), 
+            //    upper: [_buddy_pgds_len, start + count)
+            PageDescriptor* half = start + _buddy_pgds_len; 
             size_t count_until_half = half - start; 
             size_t count_after_half = count - count_until_half; 
             insert_buddy_page_range(start, count_until_half); 
@@ -1087,9 +1266,10 @@ public:
             }
 
             if (_fib_free_areas != NULL) {
-                insert_fib_page_range(half, count_after_half); 
+				// => Allocation successful! Insert rest for fib allocator
+                fib_insert_page_range(half, count_after_half); 
             } else {
-                // => Fallback to try steal upper memory
+                // => Fallback to try steal upper memory -- reentry
                 insert_page_range(half, count_after_half); 
             }
 
@@ -1104,6 +1284,7 @@ public:
                 _fib_free_areas_pgcount, count
             ); 
         } else {
+			// _fib_max_block_size = 
             _fib_free_areas_lim = (uintptr_t)(_fib_free_areas_base + _fib_free_areas_len); 
             mm_log.messagef(
                 LogLevel::INFO, 
@@ -1112,30 +1293,7 @@ public:
             ); 
         }
     }
-
-
-
-
-    /* [NOTE]
-     * Remember how buddy is used for lower memory and fibonacci is used for upper memory, 
-     * and that fibonacci might take guesswork to find a good size for _free_areas? 
-     * 
-     * You could, hypothetically, initialize buddy_allocator FIRST and then perform a malloc using 
-     * buddy_allocator to carve out a _free_areas space for fibonacci_allocator -- true 
-     * bootstrapping experience. 
-     * 
-     * Remains to find the size of that _free_areas, which could be done in O(n) time obv. 
-     * 
-     * This might? be doable with a remove-time one-time-hook, since dynamic allocation is 
-     * guaranteed after *some* memory has been removed and inserted, leaving some other amount of 
-     * memory behind (assuming there's enough). 
-     * 
-     * Since kernel uses the most memory at bootup time (as spec) there seems to be this lower-upper 
-     * split in kernel memory use, which means we could? split this as such, again at some buddy-
-     * boundary to preserve... stuff, I guess. Reliability is always a huge issue...
-     */
-
-    
+#pragma endregion api_impl
 }; 
 
 // RegisterPageAllocator(ChimeraPageAllocator); 
