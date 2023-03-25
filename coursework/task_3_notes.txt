@@ -1,0 +1,87 @@
+# High Level Design
+We implement the FIFO ATA block cache in `page-cache.h` and `page-cache.cpp` 
+respectively. The cache maintains a fixed-size linked list of block snapshots such 
+that, for *each and every* block read from an ATA device which implements this cache, 
+the device first checks whether the cache's linked list contains the block at the 
+corresponding offset, and then performs as follows: 
+
+-   [If the cache contains the requested block]
+    A "cache hit" message is outputted at DEBUG level. The content of this block 
+    snapshot is copied to the contiguous memory starting from `(void*)buffer` using 
+    the libc function `memcpy`. 
+
+-   [If the cache does not contain the requested block]
+    A "cache miss" message is outputted at DEBUG level. The requested block is 
+    transferred to the contiguous memory starting from `(void*)buffer`. Then, `buffer` 
+    is incremented by `block_size()` bytes to point to the start of next block (though 
+    InfOS only reads one block per `read_blocks` call). Then, given that there exists 
+    enough memory to establish a new block snapshot in memory, the content loaded to 
+    `buffer` is copied to the allocated memory, which implies that the content of this 
+    block is added to cache. 
+
+Like CW1, this implementation prefers a linked-list-based implementation over a 
+map-based implemention due to the risk of memory leaks within the incomplete InfOS map 
+implementation. Nevertheless, because the InfOS lacks the implementation of the 
+`delete[] void*` operator (as complained by g++), memory used from an ATA device is 
+nevertheless leaked with no way of deallocation. 
+
+# Performance
+There is visible difference in response time when running InfOS with the FIFO ATA block 
+cache compared to without one. 
+
+# Correctness
+Because the InfOS virtual machine utilizes a read-only ATA device, there is no need for 
+
+
+# Alterations to `ata-device.h`
+```c++
+class ATADevice : public block::BlockDevice {
+public:
+    ...
+private: 
+    Cache _cache; 
+    ...
+}
+```
+
+# Alterations to `ata-device.cpp`
+```c++
+ATADevice::ATADevice(...): 
+_cache(ATADevice::block_size()), 
+... {...}
+```
+
+```c++
+bool ATADevice::read_blocks(void* buffer, size_t offset, size_t count) {
+    uint8_t* buf_u8 = (uint8_t*)buffer; 
+	for (; count > 0; count--) {
+		uint8_t* res = _cache.find_block_in_cache(offset); 
+		if (res != NULL) {
+			// => Cache hit
+			ata_log.messagef(
+				LogLevel::DEBUG, 
+				"[CACHE HIT] offset=%d", 
+				offset
+			); 
+			memcpy(buffer, (void*)res, block_size()); 
+		} else {
+			// => Cache miss
+			ata_log.messagef(
+				LogLevel::DEBUG, 
+				"[CACHE MISS] offset=%d", 
+				offset
+			); 
+			if (!transfer(0, offset, buf_u8, 1)) return false; 
+			buf_u8 += block_size(); 
+
+			// Add to cache
+			uint8_t* cache_dest = _cache.push_new_block(offset); 
+			if (cache_dest != NULL) {
+				memcpy((void*)cache_dest, buffer, block_size());
+			}
+		}
+		offset++; 
+	} 
+	return true; 
+}
+```

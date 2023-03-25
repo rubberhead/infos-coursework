@@ -180,13 +180,13 @@ private:
 		const size_t tgt_order = source_order - 1; 
 		PageDescriptor* half_left = block_ptr; 
 		PageDescriptor* half_right = buddy_of(half_left, tgt_order);
-		mm_log.messagef(
-			LogLevel::DEBUG, 
-			"[buddy::split_block] Halves: L@0x%lx (%lx), R@0x%lx (%lx). Order: %d->%d", 
-			half_left, sys.mm().pgalloc().pgd_to_pfn(half_left),
-			half_right, sys.mm().pgalloc().pgd_to_pfn(half_right), 
-			source_order, tgt_order
-		);
+		// mm_log.messagef(
+		// 	LogLevel::DEBUG, 
+		// 	"[buddy::split_block] Halves: L@0x%lx (%lx), R@0x%lx (%lx). Order: %d->%d", 
+		// 	half_left, sys.mm().pgalloc().pgd_to_pfn(half_left),
+		// 	half_right, sys.mm().pgalloc().pgd_to_pfn(half_right), 
+		// 	source_order, tgt_order
+		// );
 		assert(__min((uintptr_t)half_left, (uintptr_t)half_right) == (uintptr_t)half_left); 
 
 		// assert(half_left->type != PageDescriptorType::INVALID); 
@@ -250,26 +250,26 @@ private:
 
 		} else {
 			// => Segmentation fault
-			mm_log.message(
-				LogLevel::FATAL, 
-				"[buddy::split_block] Block segmentation fault. Crashed!"
-			); 
-			mm_log.messagef(
-				LogLevel::DEBUG, 
-				"[buddy::split_block] Attempted to split {pgd@0x%lx, order: %d} to "
-				"({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) and insert wrt "
-				"({pgd@0x%lx, order: %d} -> {pgd@0x%lx, order: %d}), but got segmentation fault.", 
-				block_ptr, 
-				source_order, 
-				half_left, 
-				tgt_order, 
-				half_right, 
-				tgt_alignment, 
-				_free_areas[tgt_order], 
-				tgt_order, 
-				_free_areas[tgt_order]->next_free, 
-				(_free_areas[tgt_order]->next_free == NULL) ? -1 : tgt_order
-			); 
+			// mm_log.message(
+			// 	LogLevel::FATAL, 
+			// 	"[buddy::split_block] Block segmentation fault. Crashed!"
+			// ); 
+			// mm_log.messagef(
+			// 	LogLevel::DEBUG, 
+			// 	"[buddy::split_block] Attempted to split {pgd@0x%lx, order: %d} to "
+			// 	"({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) and insert wrt "
+			// 	"({pgd@0x%lx, order: %d} -> {pgd@0x%lx, order: %d}), but got segmentation fault.", 
+			// 	block_ptr, 
+			// 	source_order, 
+			// 	half_left, 
+			// 	tgt_order, 
+			// 	half_right, 
+			// 	tgt_alignment, 
+			// 	_free_areas[tgt_order], 
+			// 	tgt_order, 
+			// 	_free_areas[tgt_order]->next_free, 
+			// 	(_free_areas[tgt_order]->next_free == NULL) ? -1 : tgt_order
+			// ); 
 			assert(false); 
 		}
 
@@ -315,13 +315,13 @@ private:
 		/* Check if mergeable */
 		if (buddy_ptr->type != PageDescriptorType::AVAILABLE) {
 			// => L, R not mergeable -- buddy not free.
-			mm_log.messagef(
-				LogLevel::ERROR, 
-				"[buddy::merge_block] Cannot merge ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) "
-				"because one of the buddy blocks is not marked as AVAILABLE.", 
-				src_l_block, source_order, 
-				src_r_block, source_order
-			); 
+			// mm_log.messagef(
+			// 	LogLevel::ERROR, 
+			// 	"[buddy::merge_block] Cannot merge ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) "
+			// 	"because one of the buddy blocks is not marked as AVAILABLE.", 
+			// 	src_l_block, source_order, 
+			// 	src_r_block, source_order
+			// ); 
 			return NULL; 
 		}
 		// => L, R mergeable -- buddy free.
@@ -368,33 +368,33 @@ private:
 			_free_areas[tgt_order] = tgt_block; 			
 		} else {
 			// => Segmentation fault
-			mm_log.message(
-				LogLevel::FATAL, 
-				"[buddy::merge_block] Block segmentation fault. Crashed!"
-			); 
-			mm_log.messagef(
-				LogLevel::DEBUG, 
-				"[buddy::merge_block] Attempted to merge ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) to "
-				"{pgd@0x%lx, order: %d} and insert wrt "
-				"({pgd@0x%lx, order: %d} -> {pgd@0x%lx, order: %d}), but got segmentation fault.", 
-				src_l_block, source_order, 
-				src_r_block, source_order, 
-				tgt_block, tgt_order, 
-				_free_areas[tgt_order], tgt_order, 
-				_free_areas[tgt_order]->next_free, 
-				(_free_areas[tgt_order] == NULL) ? -1 : tgt_order
-			); 
+			// mm_log.message(
+			// 	LogLevel::FATAL, 
+			// 	"[buddy::merge_block] Block segmentation fault. Crashed!"
+			// ); 
+			// mm_log.messagef(
+			// 	LogLevel::DEBUG, 
+			// 	"[buddy::merge_block] Attempted to merge ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) to "
+			// 	"{pgd@0x%lx, order: %d} and insert wrt "
+			// 	"({pgd@0x%lx, order: %d} -> {pgd@0x%lx, order: %d}), but got segmentation fault.", 
+			// 	src_l_block, source_order, 
+			// 	src_r_block, source_order, 
+			// 	tgt_block, tgt_order, 
+			// 	_free_areas[tgt_order], tgt_order, 
+			// 	_free_areas[tgt_order]->next_free, 
+			// 	(_free_areas[tgt_order] == NULL) ? -1 : tgt_order
+			// ); 
 			assert(false); 
 		}
 
-		mm_log.messagef(
-			LogLevel::DEBUG, 
-			"[buddy::split_block] Merged ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) to "
-			"{pgd@0x%lx, order: %d}.", 
-			src_l_block, source_order, 
-			src_r_block, source_order, 
-			tgt_block, tgt_order
-		); 
+		// mm_log.messagef(
+		// 	LogLevel::DEBUG, 
+		// 	"[buddy::split_block] Merged ({pgd@0x%lx, order: %d}, {pgd@0x%lx, order: %d}) to "
+		// 	"{pgd@0x%lx, order: %d}.", 
+		// 	src_l_block, source_order, 
+		// 	src_r_block, source_order, 
+		// 	tgt_block, tgt_order
+		// ); 
 		return &_free_areas[tgt_order]; 
 	}
 
@@ -448,12 +448,12 @@ private:
 			block_base->type = PageDescriptorType::RESERVED; 
 		}
 
-		mm_log.messagef(
-			LogLevel::INFO, 
-			"[buddy::reserve_block] Reserved block [pgn@0x%lx (%lx), pgn@0x%lx (%lx)).", 
-			block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
-			block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim)
-		);
+		// mm_log.messagef(
+		// 	LogLevel::INFO, 
+		// 	"[buddy::reserve_block] Reserved block [pgn@0x%lx (%lx), pgn@0x%lx (%lx)).", 
+		// 	block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
+		// 	block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim)
+		// );
 	}
 
 public:
@@ -465,11 +465,11 @@ public:
 	 */
 	PageDescriptor *allocate_pages(int order) override
 	{
-		mm_log.messagef(
-			LogLevel::DEBUG, 
-			"[buddy::allocate_pages] Trying to allocate %d-order block...", 
-			order
-		); 
+		// mm_log.messagef(
+		// 	LogLevel::DEBUG, 
+		// 	"[buddy::allocate_pages] Trying to allocate %d-order block...", 
+		// 	order
+		// ); 
 		if (_free_areas[order] != NULL) {
 			// => Exists subdivision in _free_areas
 			auto allocated = _free_areas[order];
@@ -506,13 +506,13 @@ public:
 			// DO NOT alter those of allocated_buddy as we don't know whether they are available 
 			// (i.e., in _free_ares) or not!
 
-			mm_log.messagef(
-				LogLevel::INFO, 
-				"[buddy::allocate_pages] Allocated block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
-				allocated, sys.mm().pgalloc().pgd_to_pfn(allocated), 
-				allocated + __two_pow(order), sys.mm().pgalloc().pgd_to_pfn(allocated + __two_pow(order)), 
-				order
-			); 
+			// mm_log.messagef(
+			// 	LogLevel::INFO, 
+			// 	"[buddy::allocate_pages] Allocated block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
+			// 	allocated, sys.mm().pgalloc().pgd_to_pfn(allocated), 
+			// 	allocated + __two_pow(order), sys.mm().pgalloc().pgd_to_pfn(allocated + __two_pow(order)), 
+			// 	order
+			// ); 
 			// dump_state(); 
 			return allocated; 
 		}
@@ -526,25 +526,25 @@ public:
 		}
 		// 1. No larger subdivisions exist => not enough contiguous memory, return NULL. 
 		if (from_order == -1) {
-			mm_log.messagef(
-				LogLevel::ERROR, 
-				"[buddy::allocate_pages] Cannot allocate contiguous memory of order %d -- 0x%lx pages", 
-				order, 
-				TWO_POW(order)
-			); 
+			// mm_log.messagef(
+			// 	LogLevel::ERROR, 
+			// 	"[buddy::allocate_pages] Cannot allocate contiguous memory of order %d -- 0x%lx pages", 
+			// 	order, 
+			// 	TWO_POW(order)
+			// ); 
 			return NULL; 
 		}
 
 		// 2. Try to split larger subdivisions until exists correct order, then return 
-		mm_log.messagef(
-			LogLevel::DEBUG, 
-			"[buddy::allocate_pages] Splitting {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}...", 
-			_free_areas[from_order], 
-			sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order]), 
-			_free_areas[from_order] + __two_pow(from_order), 
-			sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order] + __two_pow(from_order)), 
-			from_order
-		); 
+		// mm_log.messagef(
+		// 	LogLevel::DEBUG, 
+		// 	"[buddy::allocate_pages] Splitting {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}...", 
+		// 	_free_areas[from_order], 
+		// 	sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order]), 
+		// 	_free_areas[from_order] + __two_pow(from_order), 
+		// 	sys.mm().pgalloc().pgd_to_pfn(_free_areas[from_order] + __two_pow(from_order)), 
+		// 	from_order
+		// ); 
 		split_block(&_free_areas[from_order], from_order); 
 		return allocate_pages(order); 
 	}
@@ -586,23 +586,23 @@ public:
 
 		if (pgd_order != order) {
 			// => unable to merge to given order, exists non-available buddy
-			mm_log.messagef(
-				LogLevel::ERROR, 
-				"[buddy::free_pages] Freed up until {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d} "
-				"instead of order %d -- encountered unavailable buddy block.", 
-				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
-				pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
-				pgd_order, order
-			); 
+			// mm_log.messagef(
+			// 	LogLevel::ERROR, 
+			// 	"[buddy::free_pages] Freed up until {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d} "
+			// 	"instead of order %d -- encountered unavailable buddy block.", 
+			// 	pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
+			// 	pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
+			// 	pgd_order, order
+			// ); 
 		} else {
 			// => merged to given order
-			mm_log.messagef(
-				LogLevel::INFO, 
-				"[buddy::free_pages] Freed up block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
-				pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
-				pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
-				pgd_order
-			); 
+			// mm_log.messagef(
+			// 	LogLevel::INFO, 
+			// 	"[buddy::free_pages] Freed up block {[pgd@0x%lx (%lx), pgd@0x%lx (%lx)), order: %d}.", 
+			// 	pgd, sys.mm().pgalloc().pgd_to_pfn(pgd), 
+			// 	pgd + __two_pow(pgd_order), sys.mm().pgalloc().pgd_to_pfn(pgd + __two_pow(pgd_order)), 
+			// 	pgd_order
+			// ); 
 		}
     }
 
@@ -615,12 +615,12 @@ public:
     {
 		PageDescriptor* bound_base = start; 
 		PageDescriptor* bound_lim = start + count;
-		mm_log.messagef(
-			LogLevel::INFO, 
-			"[buddy::insert_page_range] Clearing [pgd@0x%x (pfn: 0x%x), pgd@0x%x (pfn: 0x%x)).", 
-			bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
-			bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
-		); 
+		// mm_log.messagef(
+		// 	LogLevel::INFO, 
+		// 	"[buddy::insert_page_range] Clearing [pgd@0x%x (pfn: 0x%x), pgd@0x%x (pfn: 0x%x)).", 
+		// 	bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
+		// 	bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
+		// ); 
 
 		while (bound_base != bound_lim) {
 			assert(bound_base < bound_lim);
@@ -648,23 +648,23 @@ public:
 				_free_areas[order] = block_base; 
 
 				bound_base = block_lim; 
-				mm_log.messagef(
-					LogLevel::DEBUG, 
-					"[buddy::insert_page_range] At order %d, retrieved [pgd@0x%lx (%lx), pgd@0x%lx (%lx)). "
-					"%lx pages remaining...", 
-					order, 
-					block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
-					block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim), 
-					bound_lim - bound_base
-				);
+				// mm_log.messagef(
+				// 	LogLevel::DEBUG, 
+				// 	"[buddy::insert_page_range] At order %d, retrieved [pgd@0x%lx (%lx), pgd@0x%lx (%lx)). "
+				// 	"%lx pages remaining...", 
+				// 	order, 
+				// 	block_base, sys.mm().pgalloc().pgd_to_pfn(block_base), 
+				// 	block_lim, sys.mm().pgalloc().pgd_to_pfn(block_lim), 
+				// 	bound_lim - bound_base
+				// );
 				break; 
 				// if (bound_base == bound_lim) break; 
 			}
 		}
-		mm_log.message(
-			LogLevel::INFO, 
-			"[buddy::insert_page_range] Finished clearance! Dumping state..."
-		);
+		// mm_log.message(
+		// 	LogLevel::INFO, 
+		// 	"[buddy::insert_page_range] Finished clearance! Dumping state..."
+		// );
 		dump_state(); 
     }
 
@@ -677,12 +677,12 @@ public:
     {
         PageDescriptor* bound_base = start; 
 		PageDescriptor* bound_lim = start + count; 
-		mm_log.messagef(
-			LogLevel::INFO, 
-			"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)).", 
-			bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
-			bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
-		); 
+		// mm_log.messagef(
+		// 	LogLevel::INFO, 
+		// 	"[buddy::remove_page_range] Reserving [{pgd@0x%lx (%x)}, {pgd@0x%lx} (%x)).", 
+		// 	bound_base, sys.mm().pgalloc().pgd_to_pfn(bound_base), 
+		// 	bound_lim, sys.mm().pgalloc().pgd_to_pfn(bound_lim)
+		// ); 
 		// dump_state(); 
 
 		/* Subprocedure for reserving all blocks for [bound_base, bound_lim) */
@@ -696,11 +696,11 @@ public:
 				if (block_base == bound_base && block_lim == bound_lim) {
 					// => [bound_base, bound_lim) aligned by buddy-ness, can fill into single block
 					reserve_block(block_base, order);
-					mm_log.message(
-						LogLevel::INFO, 
-						"[buddy::remove_page_range] Finished reservation! Dumping state..."
-					);
-					dump_state(); 
+					// mm_log.message(
+					// 	LogLevel::INFO, 
+					// 	"[buddy::remove_page_range] Finished reservation! Dumping state..."
+					// );
+					// dump_state(); 
 					return; 
 
 				} else if (block_base == bound_base && block_lim < bound_lim) {

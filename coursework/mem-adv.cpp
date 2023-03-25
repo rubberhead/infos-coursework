@@ -190,14 +190,6 @@ namespace fib_helper {
         }
     }
 
-    /** 
-     * Finds the first fibonacci number >= 2^order.
-     */
-    inline uint32_t order_to_fib_ceil(size_t order) {
-        size_t pg_count = TWO_POW(order); 
-        return count_to_fib_ceil(pg_count); 
-    }
-
 	/**
 	 * Finds the first fibonacci number >= pg_count.
 	 * 
@@ -215,6 +207,14 @@ namespace fib_helper {
             curr_fib = idx_to_fib(curr_idx); 
         }
         return curr_fib; 
+    }
+
+	/** 
+     * Finds the first fibonacci number >= 2^order.
+     */
+    inline uint32_t order_to_fib_ceil(size_t order) {
+        size_t pg_count = TWO_POW(order); 
+        return count_to_fib_ceil(pg_count); 
     }
 
 	/**

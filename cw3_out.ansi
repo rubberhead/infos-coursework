@@ -1,0 +1,331 @@
+  CXX      drivers/ata/page-cache.o
+  CXX      drivers/ata/ata-controller.o
+  CXX      drivers/ata/ata-device.o
+  LD       infos-kernel.o
+  LD       out/infos-kernel.64
+  OBJCOPY  out/infos-kernel
+
+  InfOS kernel build complete: /home/rubberhead/Documents/InfOS-CW/infos/out/infos-kernel
+
+  AR      bin/crt.a
+  AR      bin/libinfos.a
+  LD      bin/init
+  LD      bin/ls
+  LD      bin/tree
+  LD      bin/shell
+  LD      bin/prio-sched-test
+  LD      bin/sleep-sched-test
+  LD      bin/ticker-sched-test
+  LD      bin/hello-world
+  LD      bin/mandelbrot
+  LD      bin/cat
+  LD      bin/date
+  LD      bin/tictactoe
+  LD      bin/time
+  LD      bin/conc-sched-test
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/docs
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/subdir111
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/subdir112
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/subdir113
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir12
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir13/subdir131
+mkdir -p /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir2/subdir21
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/A
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/B
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/C
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/D
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/subdir111/E
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir11/subdir111/F
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir12/G
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir12/H
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir13/I
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir13/J
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir1/subdir13/subdir131/K
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir2/L
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir2/subdir21/M
+touch /home/rubberhead/Documents/InfOS-CW/infos-user/bin/subdir2/subdir21/N
+cp README /home/rubberhead/Documents/InfOS-CW/infos-user/bin/docs/
+tar cf /home/rubberhead/Documents/InfOS-CW/infos-user/bin/rootfs.tar -C /home/rubberhead/Documents/InfOS-CW/infos-user/bin init ls tree shell prio-sched-test sleep-sched-test ticker-sched-test hello-world mandelbrot cat date tictactoe time conc-sched-test docs/ subdir1/ subdir2/
+[32;1m   info: [37;0m-----------------------------------------------------------------
+[32;1m   info: [37;0mStarting InfOS!
+[32;1m   info: [37;0m-----------------------------------------------------------------
+[32;1m   info: [37;0mKernel command-line: /home/rubberhead/Documents/InfOS-CW/infos/out/infos-kernel boot-device=ata0 init=/usr/init pgalloc.debug=0 pgalloc.algorithm=simple objalloc.debug=0 sched.debug=0 sched.algorithm=cfs syslog=serial sched.algorithm=adv pgalloc.algorithm=buddy
+[34;1m  debug: [37;0mx86: Initialising platform
+[34;1m  debug: [37;0mx86: GDTR = 0xffffffff801470f0, IDTR = 0xffffffff801460e0, TR = 0x28, RSP = 0xffffffff8014afb8
+[34;1m  debug: [37;0mx86: Initialising memory management
+[32;1m   info: [37;0mmm: PMB: 0000000000--000009f000 (636 kB) 
+[32;1m   info: [37;0mmm: PMB: 00000f0000--0000100000 (64 kB) (unusable)
+[32;1m   info: [37;0mmm: PMB: 0000100000--00bffe0000 (3144576 kB) 
+[32;1m   info: [37;0mmm: PMB: 00bffe0000--00c0000000 (128 kB) (unusable)
+[32;1m   info: [37;0mmm: PMB: 00fffc0000--0100000000 (256 kB) (unusable)
+[32;1m   info: [37;0mmm: PMB: 0100000000--01c0000000 (3145728 kB) 
+[32;1m   info: [37;0mmm: PMB: fd00000000--fd00000000 (0 kB) (unusable)
+[32;1m   info: [37;0mmm: Total physical memory: 1c0000000 (7168 MB)
+[32;1m   info: [37;0mmm: Last PFN: 1bffff (1bffff000)
+[34;1m  debug: [37;0mmm: Searching for 'buddy' algorithm...
+[37;1;42m notice: *** USING PAGE ALLOCATION ALGORITHM: buddy[37;0m
+[34;1m  debug: [37;0mmm: Allocating 1835008 page descriptors (57344 kB)
+[32;1m   info: [37;0mmm: Initialising allocator algorithm 'buddy'
+[32;1m   info: [37;0mmm: Page Allocator: total=1835008
+[32;1m   info: [37;0mmm: [buddy::init] Initialized buddy descriptor with 1c0000 pages. Dumping state...
+[34;1m  debug: [37;0mmm: BUDDY STATE:
+[34;1m  debug: [37;0mmm: [0] 9e 
+[34;1m  debug: [37;0mmm: [1] 9c 
+[34;1m  debug: [37;0mmm: [2] 98 
+[34;1m  debug: [37;0mmm: [3] 90 
+[34;1m  debug: [37;0mmm: [4] 80 
+[34;1m  debug: [37;0mmm: [5] 
+[34;1m  debug: [37;0mmm: [6] 
+[34;1m  debug: [37;0mmm: [7] 0 
+[34;1m  debug: [37;0mmm: [8] 
+[34;1m  debug: [37;0mmm: [9] 
+[34;1m  debug: [37;0mmm: [10] 
+[34;1m  debug: [37;0mmm: [11] 
+[34;1m  debug: [37;0mmm: [12] 
+[34;1m  debug: [37;0mmm: [13] 
+[34;1m  debug: [37;0mmm: [14] 
+[34;1m  debug: [37;0mmm: [15] 
+[34;1m  debug: [37;0mmm: [16] 
+[34;1m  debug: [37;0mmm: [17] 
+[34;1m  debug: [37;0mmm: [18] 
+[34;1m  debug: [37;0mmm: BUDDY STATE:
+[34;1m  debug: [37;0mmm: [0] 9e 
+[34;1m  debug: [37;0mmm: [1] 9c 
+[34;1m  debug: [37;0mmm: [2] 98 
+[34;1m  debug: [37;0mmm: [3] 90 
+[34;1m  debug: [37;0mmm: [4] 80 
+[34;1m  debug: [37;0mmm: [5] bffc0 
+[34;1m  debug: [37;0mmm: [6] bff80 
+[34;1m  debug: [37;0mmm: [7] bff00 0 
+[34;1m  debug: [37;0mmm: [8] bfe00 100 
+[34;1m  debug: [37;0mmm: [9] bfc00 200 
+[34;1m  debug: [37;0mmm: [10] bf800 400 
+[34;1m  debug: [37;0mmm: [11] bf000 800 
+[34;1m  debug: [37;0mmm: [12] be000 1000 
+[34;1m  debug: [37;0mmm: [13] bc000 2000 
+[34;1m  debug: [37;0mmm: [14] b8000 4000 
+[34;1m  debug: [37;0mmm: [15] b0000 8000 
+[34;1m  debug: [37;0mmm: [16] a0000 10000 
+[34;1m  debug: [37;0mmm: [17] 80000 20000 
+[34;1m  debug: [37;0mmm: [18] 40000 
+[34;1m  debug: [37;0mmm: BUDDY STATE:
+[34;1m  debug: [37;0mmm: [0] 9e 
+[34;1m  debug: [37;0mmm: [1] 9c 
+[34;1m  debug: [37;0mmm: [2] 98 
+[34;1m  debug: [37;0mmm: [3] 90 
+[34;1m  debug: [37;0mmm: [4] 80 
+[34;1m  debug: [37;0mmm: [5] bffc0 
+[34;1m  debug: [37;0mmm: [6] bff80 
+[34;1m  debug: [37;0mmm: [7] bff00 0 
+[34;1m  debug: [37;0mmm: [8] bfe00 100 
+[34;1m  debug: [37;0mmm: [9] bfc00 200 
+[34;1m  debug: [37;0mmm: [10] bf800 400 
+[34;1m  debug: [37;0mmm: [11] bf000 800 
+[34;1m  debug: [37;0mmm: [12] be000 1000 
+[34;1m  debug: [37;0mmm: [13] bc000 2000 
+[34;1m  debug: [37;0mmm: [14] b8000 4000 
+[34;1m  debug: [37;0mmm: [15] b0000 8000 
+[34;1m  debug: [37;0mmm: [16] a0000 10000 
+[34;1m  debug: [37;0mmm: [17] 80000 20000 
+[34;1m  debug: [37;0mmm: [18] 180000 140000 100000 40000 
+[32;1m   info: [37;0mmm: Reserving page zero
+[32;1m   info: [37;0mmm: Reserving initial page table pages
+[32;1m   info: [37;0mmm: Page Allocator: total=1835008, present=1572735, free=1558391 (6087 MB)
+[34;1m  debug: [37;0mx86: Kernel page tables @ 0xffffffff83910000
+[34;1m  debug: [37;0mx86: Initialising IRQs
+[34;1m  debug: [37;0mx86: Configuring platform with ACPI
+[34;1m  debug: [37;0macpi: finding ebda...
+[34;1m  debug: [37;0macpi: ebda=0xffffffff8009fc00, locating rsdp descriptor...
+[34;1m  debug: [37;0macpi: rsdp=0xffffffff800f6c70
+[32;1m   info: [37;0macpi: acpi version=0 oemid=BOCHS rsdt=0xbffe1ac6
+[34;1m  debug: [37;0macpi: parsing acpi tables rsdt=0xffff8000bffe1ac6
+[32;1mwarning: [37;0macpi: unsupported acpi table: 50434146
+[34;1m  debug: [37;0macpi: madt: lca=fee00000, flags=1
+[34;1m  debug: [37;0macpi: madt: lapic: id=0, procid=0, flags=1
+[34;1m  debug: [37;0macpi: madt: ioapic: id=0, addr=0xfec00000, gsi-base=0
+[34;1m  debug: [37;0macpi: madt: iso: bus=0, irq=0, gsi=2, flags=0
+[34;1m  debug: [37;0macpi: madt: iso: bus=0, irq=5, gsi=5, flags=d
+[34;1m  debug: [37;0macpi: madt: iso: bus=0, irq=9, gsi=9, flags=d
+[34;1m  debug: [37;0macpi: madt: iso: bus=0, irq=10, gsi=10, flags=d
+[34;1m  debug: [37;0macpi: madt: iso: bus=0, irq=11, gsi=11, flags=d
+[32;1mwarning: [37;0macpi: madt: unsupported record type=4, length=6
+[32;1mwarning: [37;0macpi: unsupported acpi table: 54455048
+[32;1mwarning: [37;0macpi: unsupported acpi table: 54454157
+[34;1m  debug: [37;0mx86: Initialising CPU
+[34;1m  debug: [37;0mx86: Initialising boot modules
+[34;1m  debug: [37;0mx86: Initialising timer
+[34;1m  debug: [37;0mLAPIC base=fee00000, IOAPIC base=fec00000
+[34;1m  debug: [37;0mdevmgr: registering device 'lapic0'
+[34;1m  debug: [37;0mdevmgr: registering device 'ioapic0'
+[34;1m  debug: [37;0mIOAPIC ID=0, VER=32, NR-IRQS=23
+[34;1m  debug: [37;0mdevmgr: registering device 'pit0'
+[34;1m  debug: [37;0mdevmgr: registering device 'lapic-timer0'
+[34;1m  debug: [37;0mlapic-timer: ticks=fff672bb
+[34;1m  debug: [37;0mlapic-timer: ticks-per-period=625989
+[34;1m  debug: [37;0mlapic-timer: scaled ticks-per-period=10015824
+[34;1m  debug: [37;0mlapic-timer: frequency=1001582400
+[34;1m  debug: [37;0mx86: Initialising scheduler
+[37;1;42m notice: *** USING SCHEDULER ALGORITHM: adv[37;0m
+[32;1m   info: [37;0mOK!  Starting the kernel...
+[32;1mwarning: [37;0mNo RTC available to synchronise TOD
+[34;1m  debug: [37;0mRunning scheduler
+[34;1m  debug: [37;0mEnabling interrupts
+[32;1m   info: [37;0mNow executing in the kernel thread
+[34;1m  debug: [37;0mx86: Initialising and activating console
+[34;1m  debug: [37;0mdevmgr: registering device 'vga0'
+[34;1m  debug: [37;0mdevmgr: registering device 'kbd0'
+[34;1m  debug: [37;0mdevmgr: registering device 'tty0'
+[34;1m  debug: [37;0mdevmgr: registering device alias 'console' for 'tty0'
+[34;1m  debug: [37;0mdevmgr: registering device 'tty1'
+[34;1m  debug: [37;0mdevmgr: registering device 'vc0'
+[34;1m  debug: [37;0mdevmgr: registering device 'vc1'
+[34;1m  debug: [37;0mpci: probing 0:0:0 class=6
+[34;1m  debug: [37;0mdevmgr: registering device 'pci0'
+[34;1m  debug: [37;0mpci: PCI Bridge subclass=0
+[34;1m  debug: [37;0mpci: probing 0:1:0 class=6
+[34;1m  debug: [37;0mdevmgr: registering device 'pci1'
+[34;1m  debug: [37;0mpci: PCI Bridge subclass=1
+[34;1m  debug: [37;0mpci: probing 0:1:1 class=1
+[34;1m  debug: [37;0mdevmgr: registering device 'storage0'
+[34;1m  debug: [37;0mdevmgr: registering device 'atactl0'
+[32;1m   info: [37;0mata: Initialising ATA storage device Status=0
+[34;1m  debug: [37;0mata: Probing device 0:0
+[32;1m   info: [37;0mata: Found ATA device
+[34;1m  debug: [37;0mdevmgr: registering device 'ata0'
+[34;1m  debug: [37;0mata: model=QEMU HARDDISK, size=980, caps=b00
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=0
+[34;1m  debug: [37;0mata: Probing device 0:1
+[34;1m  debug: [37;0mata: Probing device 1:0
+[31;1m  error: [37;0mata: ATA device error
+[34;1m  debug: [37;0mata: Probing device 1:1
+[34;1m  debug: [37;0mpci: probing 0:1:3 class=6
+[34;1m  debug: [37;0mdevmgr: registering device 'pci2'
+[34;1m  debug: [37;0mpci: PCI Bridge subclass=128
+[34;1m  debug: [37;0mpci: probing 0:2:0 class=3
+[34;1m  debug: [37;0mdevmgr: registering device 'pci3'
+[34;1m  debug: [37;0mpci: probing 0:3:0 class=2
+[34;1m  debug: [37;0mdevmgr: registering device 'pci4'
+[32;1m   info: [37;0mregistering additional devices...
+[32;1m   info: [37;0mvfs: VFS init
+[32;1m   info: [37;0mvfs: Registering filesystem 'internal_driver'
+[32;1m   info: [37;0mvfs: Registering filesystem 'vfat'
+[32;1m   info: [37;0mvfs: Registering filesystem 'rootfs'
+[32;1m   info: [37;0mvfs: Registering filesystem 'devfs'
+[32;1m   info: [37;0mvfs: Registering filesystem 'tmpfs'
+[32;1m   info: [37;0mMounting tmpfs root...
+[34;1m  debug: [37;0mfs: lookup=/
+[32;1m   info: [37;0mvfs: vfsnode: mounting filesystem 'tmpfs'
+[32;1m   info: [37;0mvfs: vfsnode: mounting filesystem 'devfs'
+[32;1m   info: [37;0mBooting from 'ata0'...
+[37;1;42m notice: *** USING FILE-SYSTEM DRIVER: internal_driver[37;0m
+[32;1m   info: [37;0mvfs: vfsnode: mounting filesystem 'internal_driver'
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=0
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=65
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=126
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=166
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=235
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=308
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=375
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=442
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=499
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=585
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=646
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=709
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=806
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=874
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=941
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=942
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=945
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=946
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=947
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=948
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=949
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=950
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=951
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=952
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=953
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=954
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=955
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=956
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=957
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=958
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=959
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=960
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=961
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=962
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=963
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=964
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=965
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=966
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=967
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=968
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=969
+[34;1m  debug: [37;0mLaunching application: '/usr/init' ''
+[34;1m  debug: [37;0mfs: lookup=/usr/init
+[34;1m  debug: [37;0mfs: [VFS::open] Opening file...
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=0
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=1
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mmm: vma: mapping va=0x400000 -> pa=0x3906000
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=2
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mmm: vma: mapping va=0x401000 -> pa=0x9a000
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=9
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=10
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=11
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=12
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=13
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mmm: vma: mapping va=0x402000 -> pa=0x9b000
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=17
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=18
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=19
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mmm: vma: mapping va=0x403000 -> pa=0x3908000
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=1
+[34;1m  debug: [37;0mmm: vma: mapping va=0x100000 -> pa=0x390a000
+[34;1m  debug: [37;0mmm: vma: mapping va=0x101000 -> pa=0x390b000
+[34;1m  debug: [37;0mStarting process... 0x0
+[32;1mwarning: [37;0mNo RTC available to synchronise TOD
+[32;1m   info: [37;0mCurrent time-of-day: 01/01/1970 00:00:00
+[34;1m  debug: [37;0mfs: lookup=/dev/console
+[34;1m  debug: [37;0mfs: [VFS::open] Opening file...
+[34;1m  debug: [37;0mLaunching application: '/usr/shell' ''
+[34;1m  debug: [37;0mfs: lookup=/usr/shell
+[34;1m  debug: [37;0mfs: [VFS::open] Opening file...
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=166
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=167
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mmm: vma: mapping va=0x400000 -> pa=0x390d000
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=168
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mmm: vma: mapping va=0x401000 -> pa=0xb000
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=175
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=176
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=177
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=178
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=179
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=180
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mmm: vma: mapping va=0x402000 -> pa=0xc000
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=183
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=184
+[34;1m  debug: [37;0mata: [CACHE MISS] offset=185
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mmm: vma: mapping va=0x403000 -> pa=0xd000
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mata: [CACHE HIT] offset=167
+[34;1m  debug: [37;0mmm: vma: mapping va=0x100000 -> pa=0xe000
+[34;1m  debug: [37;0mmm: vma: mapping va=0x101000 -> pa=0xf000
+[34;1m  debug: [37;0mStarting process... 0x0
+[34;1m  debug: [37;0mfs: lookup=/dev/console
+[34;1m  debug: [37;0mfs: [VFS::open] Opening file...
